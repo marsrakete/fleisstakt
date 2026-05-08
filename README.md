@@ -2,6 +2,12 @@
 
 FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App soll helfen, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden.
 
+## Projektinfos
+
+- App: [https://marsrakete.github.io/fleisstakt/](https://marsrakete.github.io/fleisstakt/)
+- Repository: [https://github.com/marsrakete/fleisstakt](https://github.com/marsrakete/fleisstakt)
+- Kontakt: [millux@marsrakete.de](mailto:millux@marsrakete.de)
+
 ## Idee
 
 Musiklernende tragen nach dem Üben kurz ein:
@@ -218,6 +224,21 @@ Aktuell enthält der Prototyp:
 - Begleitansicht für Eltern oder Lehrkraft
 - Berichte für Woche, Monat und Gesamt
 - Bericht teilen, kopieren, herunterladen oder drucken
+
+## Versionsschema
+
+Für FleißTakt gilt ein einfaches, praktisches Versionsschema:
+
+- `0.2.x` für Feinschliff, Textkorrekturen, Layout-Anpassungen und kleine Fehlerbehebungen
+- `0.3.0` für neue Funktionsblöcke, zum Beispiel neue Einstellungen, Berichtsfunktionen oder Weiterempfehlen
+- `0.4.0` und folgende für größere Ausbaustufen wie Kalenderansicht, Bearbeiten von Einträgen oder mehrere Instrumente
+- `1.0.0` für eine erste rund wirkende, öffentlich vorzeigbare Kernversion
+
+Praktische Regel:
+
+- Patch-Versionen wie `0.2.1` für kleine Korrekturen
+- Minor-Versionen wie `0.3.0` für neue Funktionen
+- Major-Versionen wie `1.0.0` für einen deutlichen Reifegrad-Sprung
 
 ## Lokal starten
 

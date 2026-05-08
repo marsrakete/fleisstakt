@@ -1,12 +1,14 @@
-const CACHE_NAME = "fleisstakt-shell-v1";
+const CACHE_NAME = "fleisstakt-shell-v2";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./app.js",
   "./styles.css",
+  "./version.js",
   "./manifest.webmanifest",
   "./icons/icon-192.svg",
   "./icons/icon-512.svg",
+  "./icons/fleisstakt-share-qr.svg",
 ];
 
 self.addEventListener("install", (event) => {

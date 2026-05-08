@@ -1,4 +1,5 @@
 const STORAGE_KEY = "fleisstakt-state-v1";
+const APP_SHARE_URL = "https://marsrakete.github.io/fleisstakt/";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
   appVersion: "0.0.0",
   cacheVersion: "v0",
@@ -972,6 +973,25 @@ function render() {
           </section>
 
           <section class="settings-block">
+            <h3>Weiterempfehlen</h3>
+            <p class="settings-copy">Teile den Link zu FleißTakt direkt aus der App.</p>
+            <div class="settings-actions">
+              <button class="secondary-action" type="button" id="share-app-button">App empfehlen</button>
+            </div>
+            <div class="share-card">
+              <img
+                class="share-qr-image"
+                src="./icons/fleisstakt-share-qr.svg"
+                alt="QR-Code zu FleißTakt"
+              />
+              <div class="share-card-copy">
+                <p class="settings-copy">Oder mit dem Smartphone scannen:</p>
+                <code class="share-url">${APP_SHARE_URL}</code>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-block">
             <h3>Updates</h3>
             <p class="settings-copy" id="version-label">Version ${escapeHtml(state.versionInfo.appVersion)} · Cache ${escapeHtml(state.versionInfo.cacheVersion)}</p>
             <p class="settings-status" data-state="${state.updateState}">${escapeHtml(state.updateStatus)}</p>
@@ -1122,6 +1142,38 @@ function bindEvents() {
         render();
       }, 2200);
       event.target.value = "";
+    });
+  }
+
+  const shareAppButton = document.querySelector("#share-app-button");
+  if (shareAppButton) {
+    shareAppButton.addEventListener("click", async () => {
+      const payload = {
+        title: "FleißTakt",
+        text: "FleißTakt hilft Musiklernenden dabei, Übezeit festzuhalten und Fleiß-Kärtchen zu sammeln.",
+        url: APP_SHARE_URL,
+      };
+
+      try {
+        if (navigator.share) {
+          await navigator.share(payload);
+          state.celebrationText = "App-Link geteilt.";
+        } else if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(`${payload.text}\n${payload.url}`);
+          state.celebrationText = "App-Link in die Zwischenablage kopiert.";
+        } else {
+          state.celebrationText = "Teilen auf diesem Gerät nicht verfügbar.";
+        }
+      } catch (error) {
+        state.celebrationText = error?.name === "AbortError" ? "Teilen wurde abgebrochen." : "App-Link konnte nicht geteilt werden.";
+      }
+
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
     });
   }
 

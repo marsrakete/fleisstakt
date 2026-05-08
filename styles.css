@@ -670,6 +670,43 @@ input[type="range"] {
   line-height: 1.4;
 }
 
+.share-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  margin-top: 14px;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 16px 18px;
+}
+
+.share-qr-image {
+  width: 112px;
+  height: 112px;
+  border-radius: 14px;
+  background: #fff;
+  padding: 8px;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+}
+
+.share-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.share-url {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(242, 111, 61, 0.08);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
 .settings-status[data-state="ready"] {
   color: #176c43;
 }
@@ -891,6 +928,12 @@ input[type="range"] {
   .topbar-actions,
   .settings-actions {
     grid-template-columns: 1fr;
+  }
+
+  .share-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
   }
 
   .topbar-actions {
