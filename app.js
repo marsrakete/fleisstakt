@@ -724,7 +724,7 @@ function profileScreen() {
     <section class="screen screen-profile">
       <div class="section-head">
         <h2>Profil</h2>
-        <p>Profil fuer Lernende und eine ruhige Sicht fuer Eltern oder Lehrkraft.</p>
+        <p>Profil für Lernende und eine ruhige Sicht für Eltern oder Lehrkraft.</p>
       </div>
       <div class="pill-row">
         <button class="pill ${state.profilePanel === "profil" ? "is-active" : ""}" type="button" data-panel="profil">
@@ -783,7 +783,7 @@ function profileScreen() {
           <strong>${stats.weekMinutes} Minuten</strong>
         </article>
         <article class="profile-line">
-          <span>Regelmaessigkeit</span>
+          <span>Regelmäßigkeit</span>
           <strong>${stats.streak} Tage Serie</strong>
         </article>
         <article class="profile-line">
@@ -791,7 +791,7 @@ function profileScreen() {
           <strong>${getCards(stats).filter((card) => card.unlocked).length}</strong>
         </article>
         <article class="profile-line">
-          <span>Letzte Eintraege</span>
+          <span>Letzte Einträge</span>
           <strong>${lastEntries.length}</strong>
         </article>
       </div>
@@ -818,11 +818,11 @@ function profileScreen() {
           </article>
           <article class="mentor-card">
             <strong>Motivation</strong>
-            <p>${stats.streak >= 3 ? "Die Uebungsroutine wirkt gerade stabil." : "Eine kleine Erinnerung koennte heute helfen."}</p>
+            <p>${stats.streak >= 3 ? "Die Übungsroutine wirkt gerade stabil." : "Eine kleine Erinnerung könnte heute helfen."}</p>
           </article>
           <article class="mentor-card">
             <strong>Fokus</strong>
-            <p>${reportData.entries[0] ? `${reportData.entries[0].category} war zuletzt der Schwerpunkt.` : "Noch keine Eintraege im gewählten Zeitraum vorhanden."}</p>
+            <p>${reportData.entries[0] ? `${reportData.entries[0].category} war zuletzt der Schwerpunkt.` : "Noch keine Einträge im gewählten Zeitraum vorhanden."}</p>
           </article>
         </div>
         <div class="history-list">
@@ -1197,16 +1197,17 @@ function bindEvents() {
       const summary = composeShortSummary();
       try {
         if (navigator.share) {
+          const reportLabel = getReportActionLabel();
           await navigator.share({
-            title: "FleißTakt Wochenbericht",
+            title: `FleißTakt ${reportLabel}`,
             text: summary,
           });
-          state.celebrationText = "Wochenbericht geteilt.";
+          state.celebrationText = `${reportLabel} geteilt.`;
         } else if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(summary);
-          state.celebrationText = "Wochenbericht in die Zwischenablage kopiert.";
+          state.celebrationText = `${getReportActionLabel()} in die Zwischenablage kopiert.`;
         } else {
-          state.celebrationText = "Teilen auf diesem Geraet nicht verfuegbar.";
+          state.celebrationText = "Teilen auf diesem Gerät nicht verfügbar.";
         }
       } catch {
         state.celebrationText = "Teilen wurde abgebrochen.";
@@ -1229,7 +1230,7 @@ function bindEvents() {
           await navigator.clipboard.writeText(summary);
           state.celebrationText = "Zusammenfassung kopiert.";
         } else {
-          state.celebrationText = "Zwischenablage ist hier nicht verfuegbar.";
+          state.celebrationText = "Zwischenablage ist hier nicht verfügbar.";
         }
       } catch {
         state.celebrationText = "Kopieren hat nicht geklappt.";
@@ -1246,7 +1247,7 @@ function bindEvents() {
   const mailSummaryButton = document.querySelector("#mail-summary");
   if (mailSummaryButton) {
     mailSummaryButton.addEventListener("click", () => {
-      const subject = encodeURIComponent(`FleißTakt Wochenbericht für ${state.profileName}`);
+      const subject = encodeURIComponent(`FleißTakt ${getReportActionLabel()} für ${state.profileName}`);
       const body = encodeURIComponent(composeWeeklySummary());
       window.location.href = `mailto:?subject=${subject}&body=${body}`;
     });
@@ -1417,8 +1418,20 @@ function formatDisplayDate(dateKey) {
 }
 
 function createReportFileName(extension) {
-  const safeName = state.profileName.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "schueler";
-  return `fleisstakt-wochenbericht-${safeName}-${createDateStamp()}.${extension}`;
+  const safeName = state.profileName.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "lernende";
+  return `fleisstakt-${getReportSlug()}-${safeName}-${createDateStamp()}.${extension}`;
+}
+
+function getReportSlug() {
+  if (state.reportRange === "month") {
+    return "monatsbericht";
+  }
+
+  if (state.reportRange === "all") {
+    return "gesamtbericht";
+  }
+
+  return "wochenbericht";
 }
 
 function createDateStamp() {
@@ -1482,7 +1495,7 @@ function composeHtmlReport({ printOnLoad = false } = {}) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FleißTakt Wochenbericht</title>
+    <title>FleißTakt ${escapeHtml(model.report.label)}</title>
     <style>
       :root {
         color-scheme: light;
@@ -1653,7 +1666,7 @@ function composeHtmlReport({ printOnLoad = false } = {}) {
       </section>
 
       <p class="footer-note">
-        Dieser Bericht soll Ueben sichtbar machen und positive Gespräche ueber Fortschritt, Regelmaessigkeit und naechste Schritte erleichtern.
+        Dieser Bericht soll Üben sichtbar machen und positive Gespräche über Fortschritt, Regelmäßigkeit und nächste Schritte erleichtern.
       </p>
     </article>
     ${
@@ -1671,7 +1684,7 @@ function openReportWindow({ printMode }) {
   const url = URL.createObjectURL(blob);
   const popup = window.open(url, "_blank", "noopener,noreferrer");
   if (!popup) {
-    state.celebrationText = "Der Bericht konnte nicht in einem neuen Fenster geoeffnet werden.";
+    state.celebrationText = "Der Bericht konnte nicht in einem neuen Fenster geöffnet werden.";
     state.celebrate = true;
     render();
     window.setTimeout(() => {

@@ -1,7 +1,7 @@
 {
   "name": "FleißTakt",
   "short_name": "FleißTakt",
-  "description": "Motivierende Uebe-PWA fuer Musikschueler mit Tages-Logs und Fleiß-Kaertchen.",
+  "description": "Motivierende Übe-PWA für Musiklernende mit Tages-Logs und Fleiß-Kärtchen.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#fffaf3",

@@ -26,7 +26,7 @@ Für die Lehrkraft entsteht daraus eine einfache Gesprächsgrundlage. Man sieht,
 
 ```mermaid
 flowchart TD
-    A["Schüler übt zu Hause"] --> B["Kurzer Eintrag in FleißTakt"]
+    A["Lernende üben zu Hause"] --> B["Kurzer Eintrag in FleißTakt"]
     B --> C["Übezeit, Schwerpunkt und optional Notiz werden festgehalten"]
     C --> D["Die App erkennt regelmäßiges Üben und kleine Fortschritte"]
 
@@ -35,7 +35,7 @@ flowchart TD
     D --> G["Kärtchen 3: Morgenklang"]
     D --> H["Kärtchen 4: Bühnenmut"]
 
-    E --> I["Der Schüler erlebt einen sichtbaren Erfolg"]
+    E --> I["Ein sichtbarer Erfolg entsteht"]
     F --> I
     G --> I
     H --> I
@@ -135,6 +135,76 @@ FleißTakt soll das Gespräch über Üben verbessern:
 - hin zu sichtbarem Fortschritt
 - hin zu mehr Eigenverantwortung der Lernenden
 - hin zu kleinen, motivierenden Erfolgserlebnissen
+
+## Ausbaustufen
+
+FleißTakt kann schrittweise wachsen, ohne den einfachen Kern der App zu verlieren.
+
+### Stufe 1: Solider Alltag
+
+- Einträge bearbeiten und löschen
+- Kalenderansicht zusätzlich zur Listenansicht
+- mehrere Instrumente pro Profil
+- feinere Übe-Bereiche, zum Beispiel Technik, Stück A, Stück B oder Improvisation
+- bessere Routine-Logik für Ferien, Pausentage oder Unterrichtsausfälle
+
+### Stufe 2: Mehr Motivation
+
+- weitere Fleiß-Kärtchen mit kleinen Themenwelten
+- Sammelalbum mit Reihen, Seltenheit und sichtbarem Fortschritt
+- kleine Feiermomente beim Freischalten
+- Wochenziele und Monatsziele
+- freundliche Erinnerungen statt nüchterner Hinweise
+
+### Stufe 3: Mehr Begleitung durch Lehrkräfte
+
+- kommentierbare Rückblicke zu Woche oder Monat
+- Fokus-Themen für die nächste Übephase
+- Zielvereinbarungen zwischen Lernenden und Lehrkraft
+- kurze Notizen für die nächste Unterrichtsstunde
+- Berichte mit noch klarerer pädagogischer Sprache
+
+### Stufe 4: Alltag über mehrere Geräte hinweg
+
+- mehrere Profile auf einem Gerät
+- noch geführtere Backup- und Wiederherstellungsabläufe
+- Export für Gespräche, Elternabende oder Dokumentation
+- optional geschützter Begleitbereich
+- saubere Nutzung auf Handy und Tablet
+
+### Stufe 5: Vernetzte Version
+
+- Login und Cloud-Sicherung
+- Freigaben für Eltern oder Lehrkraft
+- gemeinsame Wochenpläne oder Aufgaben
+- Auswahl, welche Berichte geteilt werden
+- Nutzung über mehrere Geräte hinweg ohne manuelle Sicherung
+
+### Empfohlene nächste Schritte
+
+1. Einträge bearbeiten und löschen sowie eine Kalenderansicht ergänzen.
+2. Das Sammelalbum und die Kärtchen-Motivation sichtbar ausbauen.
+3. Die Begleitung durch Lehrkräfte mit Zielen und Rückblicken vertiefen.
+
+## Fördermöglichkeit und sachliche Einordnung
+
+FleißTakt kann auch als entwicklungsfähiges Vorhaben für Musikschule, Fachbereich oder Schulleitung beschrieben werden.
+
+### Mögliche Stellen für Unterstützung
+
+- Musikschulen oder deren Fördervereine
+- kommunale Kultur- oder Bildungsförderung
+- Stiftungen mit Bezug zu Bildung, Kultur oder Teilhabe
+- Programme zur digitalen Unterrichtsentwicklung
+- Träger aus Musikpädagogik und Jugendbildung
+
+### Sachlicher Text für Schulleitung oder Musikschule
+
+FleißTakt ist als niedrigschwellige digitale Begleitung für den Musikunterricht gedacht. Die App unterstützt Lernende dabei, ihr häusliches Üben einfach zu dokumentieren, Fortschritte sichtbar zu machen und regelmäßige Übegewohnheiten aufzubauen. Gleichzeitig erhalten Lehrkräfte eine ruhige, pädagogisch anschlussfähige Übersicht über Regelmäßigkeit, Schwerpunkte und Entwicklung.
+
+Aus Sicht einer Musikschule oder Schulleitung ist FleißTakt vor allem dort interessant, wo Üben nicht nur kontrolliert, sondern als Teil eines motivierenden Lernprozesses begleitet werden soll. Die Anwendung verbindet Eigenverantwortung der Lernenden mit einer klaren Gesprächsgrundlage für den Unterricht und kann so zur Stärkung von Übekultur, Reflexion und Verbindlichkeit beitragen.
+
+Wenn das Projekt weiterentwickelt wird, lässt es sich auch als Baustein für digitale Unterrichtsentwicklung, musikalische Bildung und zeitgemäße Lernbegleitung darstellen.
 
 ## Projektstand
 
