@@ -907,7 +907,7 @@ function render() {
       <div class="app-frame ${state.celebrate ? "is-celebrating" : ""}">
         <header class="topbar">
           <div>
-            <p class="eyebrow">PWA Prototype</p>
+            <p class="eyebrow">Üben sichtbar machen</p>
             <h1>FleißTakt</h1>
           </div>
           <div class="topbar-actions">
