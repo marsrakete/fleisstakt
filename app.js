@@ -143,6 +143,14 @@ window.addEventListener("appinstalled", () => {
 
 const root = document.querySelector("#root");
 hydrateState();
+applyModalScrollLock();
+
+function applyModalScrollLock() {
+  const isLocked = state.settingsOpen || state.helpOpen;
+  document.documentElement.style.overflow = isLocked ? "hidden" : "";
+  document.body.style.overflow = isLocked ? "hidden" : "";
+  document.body.classList.toggle("is-modal-open", isLocked);
+}
 
 function watchServiceWorker(registration) {
   if (registration.waiting) {
@@ -795,6 +803,7 @@ function profileScreen() {
         <label class="field">
           <span>Lernenden-ID</span>
           <input type="text" value="${escapeHtml(state.studentId)}" readonly />
+          <small class="field-hint">Wichtig bei Gerätewechsel: Backup exportieren und auf dem neuen Gerät importieren, damit diese ID erhalten bleibt.</small>
         </label>
         <label class="field">
           <span>Name</span>
@@ -819,6 +828,7 @@ function profileScreen() {
         </label>
         <button class="primary-button" id="save-profile" type="submit">Profil speichern</button>
         <button class="secondary-action" id="export-report-package" type="button">FleißTakt-Berichtspaket exportieren</button>
+        <p class="profile-note">Für ein neues Gerät zuerst Backup exportieren. Nur so bleiben Lernenden-ID und Verlauf zusammen.</p>
       </form>
       <div class="profile-stack">
         <article class="profile-line">
@@ -961,6 +971,7 @@ function currentScreen() {
 }
 
 function render() {
+  applyModalScrollLock();
   root.innerHTML = `
     <div class="app-shell">
       <div class="app-frame ${state.celebrate ? "is-celebrating" : ""} ${(state.settingsOpen || state.helpOpen) ? "is-modal-open" : ""}">
@@ -1130,6 +1141,7 @@ function bindEvents() {
       if (state.settingsOpen) {
         state.settingsOpen = false;
         state.settingsFocusId = "";
+        applyModalScrollLock();
         render();
       }
     });
@@ -1144,6 +1156,7 @@ function bindEvents() {
     helpDialog.addEventListener("close", () => {
       if (state.helpOpen) {
         state.helpOpen = false;
+        applyModalScrollLock();
         render();
       }
     });
@@ -1224,6 +1237,7 @@ function bindEvents() {
   if (openHelpButton) {
     openHelpButton.addEventListener("click", () => {
       state.helpOpen = true;
+      applyModalScrollLock();
       render();
     });
   }
@@ -1233,6 +1247,7 @@ function bindEvents() {
     openSettingsButton.addEventListener("click", () => {
       state.settingsOpen = true;
       state.settingsFocusId = "settings-install-app";
+      applyModalScrollLock();
       render();
     });
   }
@@ -1242,6 +1257,7 @@ function bindEvents() {
     closeSettingsButton.addEventListener("click", () => {
       state.settingsOpen = false;
       state.settingsFocusId = "";
+      applyModalScrollLock();
       settingsDialog?.close();
     });
   }
@@ -1250,6 +1266,7 @@ function bindEvents() {
   if (closeHelpButton) {
     closeHelpButton.addEventListener("click", () => {
       state.helpOpen = false;
+      applyModalScrollLock();
       helpDialog?.close();
     });
   }

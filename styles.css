@@ -41,7 +41,7 @@ body {
   min-height: 100vh;
 }
 
-body:has(.app-frame.is-modal-open) {
+body.is-modal-open {
   overflow: hidden;
 }
 
@@ -332,6 +332,13 @@ button {
 .profile-line span,
 .field span {
   color: var(--ink-soft);
+}
+
+.field-hint,
+.profile-note {
+  margin: 0;
+  color: var(--ink-faint);
+  line-height: 1.35;
 }
 
 .mini-timeline {

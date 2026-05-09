@@ -110,6 +110,12 @@ Zusätzlich zu den normalen Berichten kann die Lernenden-App ein `FleißTakt-Ber
 
 Die Prüfsumme wird beim Import in der Lehrkraft-App erneut geprüft. Wenn das Paket verändert oder beschädigt wurde, wird der Import verweigert.
 
+### Gerätewechsel und Lernenden-ID
+
+Die Lernenden-ID gehört zum Profil auf dem Gerät. Damit dieselbe lernende Person bei einem Gerätewechsel weiter korrekt erkannt wird, sollte vor dem Wechsel immer ein Backup exportiert und auf dem neuen Gerät importiert werden.
+
+Wenn das nicht passiert und eine neue Lernenden-ID entsteht, kann die Lehrkraft doppelte Einträge später in der Lehrkraft-App manuell zusammenführen.
+
 ### Wofür das sinnvoll ist
 
 Das Berichtswesen soll nicht nur dokumentieren, sondern Gespräche erleichtern. Eine Lehrkraft kann je nach Situation schnell zwischen kurzer Rückmeldung, ausführlicher Übersicht und druckbarer Fassung wechseln.
@@ -148,14 +154,16 @@ Der typische Ablauf ist bewusst einfach gehalten:
 2. Die Lehrkraft importiert ein oder mehrere Pakete in die Lehrkraft-App.
 3. Die App erkennt bekannte Lernende über die feste Lernenden-ID.
 4. Neue Daten werden automatisch mit vorhandenen Daten zusammengeführt.
-5. Die Lehrkraft kann Klassen zuordnen, Namen ergänzen und Kontakte pflegen.
-6. Auf dieser Basis kann sie Berichte, Fortschritt und letzte Schwerpunkte für den Unterricht nutzen.
+5. Falls nach einem Gerätewechsel doch eine neue ID entstanden ist, können doppelte Einträge manuell zusammengeführt werden.
+6. Die Lehrkraft kann Klassen zuordnen, Namen ergänzen und Kontakte pflegen.
+7. Auf dieser Basis kann sie Berichte, Fortschritt und letzte Schwerpunkte für den Unterricht nutzen.
 
 ### Was die Lehrkraft-App bietet
 
 - Import von FleißTakt-Berichtspaketen
 - automatische Zuordnung und Merge über die Lernenden-ID
 - Ablehnung manipulierter Pakete durch Prüfsummenprüfung
+- manuelles Zusammenführen doppelter Lernenden-Einträge nach Gerätewechsel
 - Klassen anlegen und verwalten
 - Lernende mit Vorname, Nachname, E-Mail und Messenger-ID pflegen
 - Übersichten zu Minuten, Einträgen, Berichtsstand und Kärtchen
