@@ -13,6 +13,8 @@ const teacherState = {
   classDraft: "",
   toast: "",
   lastImportSummary: "Noch keine Berichtspakete importiert.",
+  installPrompt: null,
+  installReady: false,
 };
 
 const teacherRoot = document.querySelector("#teacher-root");
@@ -57,8 +59,24 @@ function defaultTeacherState() {
     classDraft: "",
     toast: "",
     lastImportSummary: "Noch keine Berichtspakete importiert.",
+    installPrompt: null,
+    installReady: false,
   };
 }
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  teacherState.installPrompt = event;
+  teacherState.installReady = true;
+  renderTeacherApp();
+});
+
+window.addEventListener("appinstalled", () => {
+  teacherState.installPrompt = null;
+  teacherState.installReady = false;
+  teacherState.toast = "Lehrkraft-App installiert.";
+  renderTeacherApp();
+});
 
 function hydrateTeacherState() {
   try {
@@ -376,6 +394,9 @@ function renderTeacherApp() {
           <p class="teacher-subline">Berichtspakete importieren, Klassen verwalten und Lernstände überblicken.</p>
         </div>
         <div class="teacher-actions">
+          <button class="teacher-button" type="button" id="install-teacher-app">
+            ${teacherState.installReady ? "Lehrkraft-App installieren" : "Installation prüfen"}
+          </button>
           <label class="teacher-button teacher-button-primary" for="report-package-input">Berichtspakete importieren</label>
           <input id="report-package-input" type="file" accept="application/json,.json" multiple hidden />
           <button class="teacher-button" type="button" id="export-teacher-backup">Backup exportieren</button>
@@ -572,6 +593,25 @@ function renderTeacherApp() {
 }
 
 function bindTeacherEvents() {
+  document.querySelector("#install-teacher-app")?.addEventListener("click", async () => {
+    if (!teacherState.installPrompt) {
+      teacherState.toast = "Die Installation wird auf diesem Gerät gerade nicht angeboten.";
+      renderTeacherApp();
+      return;
+    }
+
+    const prompt = teacherState.installPrompt;
+    prompt.prompt();
+    try {
+      await prompt.userChoice;
+    } catch {
+      // ignore aborted install
+    }
+    teacherState.installPrompt = null;
+    teacherState.installReady = false;
+    renderTeacherApp();
+  });
+
   document.querySelector("#report-package-input")?.addEventListener("change", async (event) => {
     const files = [...(event.target.files || [])];
     if (files.length) {
