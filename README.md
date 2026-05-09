@@ -5,6 +5,7 @@ FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App soll he
 ## Projektinfos
 
 - App: [https://marsrakete.github.io/fleisstakt/](https://marsrakete.github.io/fleisstakt/)
+- Lehrkraft-App: [https://marsrakete.github.io/fleisstakt/teacher.html](https://marsrakete.github.io/fleisstakt/teacher.html)
 - Repository: [https://github.com/marsrakete/fleisstakt](https://github.com/marsrakete/fleisstakt)
 - Kontakt: [millux@marsrakete.de](mailto:millux@marsrakete.de)
 
@@ -94,10 +95,46 @@ Die Lehrkraft kann in der Begleitansicht auswählen, welcher Zeitraum gerade bet
 - HTML-Bericht herunterladen
 - Textbericht herunterladen
 - Bericht drucken oder als PDF speichern
+- FleißTakt-Berichtspaket exportieren
+
+### Berichtspaket für Lehrkräfte
+
+Zusätzlich zu den normalen Berichten kann die Lernenden-App ein `FleißTakt-Berichtspaket` exportieren. Dieses Paket enthält:
+
+- feste Lernenden-ID
+- Name, Instrument und Tagesziel
+- Berichtsdaten für Woche, Monat oder Gesamt
+- zugehörige Einträge
+- freigeschaltete Fleiß-Kärtchen
+- Prüfsumme zum Erkennen veränderter Daten
+
+Die Prüfsumme wird beim Import in der Lehrkraft-App erneut geprüft. Wenn das Paket verändert oder beschädigt wurde, wird der Import verweigert.
 
 ### Wofür das sinnvoll ist
 
 Das Berichtswesen soll nicht nur dokumentieren, sondern Gespräche erleichtern. Eine Lehrkraft kann je nach Situation schnell zwischen kurzer Rückmeldung, ausführlicher Übersicht und druckbarer Fassung wechseln.
+
+## Lehrkraft-App
+
+Neben der Lernenden-App gibt es jetzt eine eigene `FleißTakt Lehrkraft`-Version. Sie ist als getrennte Oberfläche für iPad oder Desktop gedacht und kann unabhängig von der Lernenden-App installiert werden.
+
+### Was die Lehrkraft-App bietet
+
+- Import von FleißTakt-Berichtspaketen
+- automatische Zuordnung und Merge über die Lernenden-ID
+- Ablehnung manipulierter Pakete durch Prüfsummenprüfung
+- Klassen anlegen und verwalten
+- Lernende mit Vorname, Nachname, E-Mail und Messenger-ID pflegen
+- Übersichten zu Minuten, Einträgen, Berichtsstand und Kärtchen
+- eigenes Backup exportieren und importieren
+
+### Wie Berichte ankommen
+
+1. Lernende exportieren im Profil ein FleißTakt-Berichtspaket.
+2. Die Lehrkraft importiert ein oder mehrere Pakete in die Lehrkraft-App.
+3. Die App führt die Daten automatisch zusammen.
+4. Bereits bekannte Lernende werden über die feste Lernenden-ID erkannt.
+5. Veränderte oder ungültige Pakete werden abgelehnt.
 
 ## Aus Sicht der Lernenden
 
@@ -121,6 +158,7 @@ Wichtig ist dabei: Die App soll nicht Druck machen, sondern Gesprächsanlässe s
 4. Wenn sie möchten, ergänzen sie eine kurze Notiz, zum Beispiel was gut geklappt hat oder was noch schwer war.
 5. Die App speichert den Eintrag sofort.
 6. Lernende sehen ihren Fortschritt, ihre Übe-Serie und neue Fleiß-Kärtchen.
+7. Wenn Berichte an die Lehrkraft gehen sollen, exportieren sie zusätzlich ein FleißTakt-Berichtspaket.
 
 ### Wie kontrolliert oder begleitet die Lehrkraft?
 
@@ -131,7 +169,8 @@ Wichtig ist dabei: Die App soll nicht Druck machen, sondern Gesprächsanlässe s
    ob regelmäßig geübt wurde, welche Schwerpunkte gesetzt wurden und ob Lernende ihr Üben reflektieren.
 4. Im Unterricht kann sie daran anknüpfen:
    Was lief gut? Wo gab es Schwierigkeiten? Welcher Bereich braucht als Nächstes Hilfe?
-5. Bei Bedarf kann die Wochenzusammenfassung weitergegeben oder gemeinsam besprochen werden.
+5. Berichtspakete können in die eigene Lehrkraft-App importiert und dort automatisch zusammengeführt werden.
+6. Bei Bedarf kann die Zusammenfassung weitergegeben oder gemeinsam besprochen werden.
 
 ## Ziel im Unterricht
 
@@ -224,6 +263,8 @@ Aktuell enthält der Prototyp:
 - Begleitansicht für Eltern oder Lehrkraft
 - Berichte für Woche, Monat und Gesamt
 - Bericht teilen, kopieren, herunterladen oder drucken
+- FleißTakt-Berichtspaket mit Prüfsumme und Lernenden-ID
+- eigene Lehrkraft-App mit Import, Merge, Klassen und Lehrkraft-Backup
 
 ## Versionsschema
 
@@ -250,4 +291,10 @@ Danach ist die App im Browser erreichbar, zum Beispiel unter:
 
 ```text
 http://localhost:5000/
+```
+
+Die Lehrkraft-App liegt zusätzlich unter:
+
+```text
+http://localhost:5000/teacher.html
 ```
