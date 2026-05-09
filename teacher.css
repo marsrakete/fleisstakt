@@ -1,0 +1,356 @@
+:root {
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: #18222f;
+  background:
+    radial-gradient(circle at top, rgba(242, 111, 61, 0.16), transparent 28%),
+    linear-gradient(180deg, #fffaf3 0%, #f5ecde 100%);
+  color-scheme: light;
+  --ink: #1f2a36;
+  --ink-soft: #556270;
+  --ink-faint: #7d8792;
+  --line: rgba(24, 34, 47, 0.09);
+  --panel: rgba(255, 252, 247, 0.82);
+  --panel-strong: rgba(255, 249, 241, 0.95);
+  --accent: #f26f3d;
+  --accent-deep: #c85831;
+  --accent-wash: rgba(242, 111, 61, 0.12);
+  --shadow: 0 18px 42px rgba(73, 50, 30, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#teacher-root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+.teacher-shell {
+  min-height: 100vh;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.teacher-topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.teacher-topbar h1,
+.detail-header h2,
+.detail-card h2,
+.sidebar-head h2,
+.detail-card h3 {
+  margin: 0;
+}
+
+.teacher-eyebrow {
+  margin: 0 0 8px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.74rem;
+}
+
+.teacher-subline,
+.import-summary,
+.empty-copy,
+.detail-note,
+.teacher-entry-row p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.teacher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.teacher-button,
+.class-chip,
+.student-row,
+.teacher-link {
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.teacher-button {
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--accent-deep);
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  display: inline-grid;
+  place-items: center;
+}
+
+.teacher-button-primary {
+  background: var(--accent);
+  color: #fffaf3;
+}
+
+.teacher-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overview-card,
+.sidebar-panel,
+.detail-card,
+.detail-header {
+  background: var(--panel-strong);
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.overview-card {
+  padding: 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.overview-card span {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.overview-card strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.import-summary {
+  padding: 0 4px;
+}
+
+.teacher-workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.teacher-sidebar,
+.teacher-main {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.sidebar-panel,
+.detail-card,
+.detail-header {
+  padding: 16px;
+}
+
+.sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.teacher-link {
+  background: transparent;
+  color: var(--accent-deep);
+  padding: 0;
+}
+
+.class-list,
+.student-list,
+.badge-row,
+.detail-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.class-chip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  border: 1px solid rgba(24, 34, 47, 0.06);
+}
+
+.class-chip.is-active,
+.student-row.is-active {
+  background: var(--accent-wash);
+  border-color: rgba(242, 111, 61, 0.3);
+}
+
+.class-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.student-row {
+  text-align: left;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(24, 34, 47, 0.06);
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
+}
+
+.student-row span,
+.student-row small {
+  color: var(--ink-soft);
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.detail-badges,
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-badges span,
+.teacher-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(24, 34, 47, 0.06);
+}
+
+.detail-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+}
+
+.detail-card form,
+.detail-card label,
+.teacher-entry-list,
+.detail-metrics {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-card label span,
+.detail-card dt {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  margin-bottom: 4px;
+}
+
+input[type="text"],
+select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
+}
+
+.detail-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detail-metrics div {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(24, 34, 47, 0.08);
+}
+
+.detail-metrics dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+
+.teacher-entry-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(24, 34, 47, 0.08);
+}
+
+.teacher-entry-row:last-child {
+  border-bottom: 0;
+}
+
+.teacher-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #1f2a36;
+  color: #fffaf3;
+  box-shadow: 0 18px 28px rgba(31, 42, 54, 0.22);
+}
+
+@media (max-width: 1100px) {
+  .teacher-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .teacher-workspace,
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .teacher-shell {
+    padding: 14px;
+  }
+
+  .teacher-topbar {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .teacher-actions,
+  .class-form {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .teacher-overview,
+  .detail-metrics {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,9 +1,12 @@
-const CACHE_NAME = "fleisstakt-shell-v2";
+const CACHE_NAME = "fleisstakt-shell-v6";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./app.js",
   "./styles.css",
+  "./teacher.html",
+  "./teacher.js",
+  "./teacher.css",
   "./version.js",
   "./manifest.webmanifest",
   "./icons/icon-192.svg",

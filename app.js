@@ -90,6 +90,7 @@ const state = {
   celebrate: false,
   celebrationText: "Neues Kärtchen vorbereitet. Weiter so!",
   profileName: "Mila",
+  studentId: "",
   entries: [],
   profilePanel: "profil",
   goal: 15,
@@ -98,6 +99,8 @@ const state = {
   prefersDesktopActions: window.matchMedia("(pointer:fine)").matches,
   reportRange: "week",
   settingsOpen: false,
+  settingsFocusId: "",
+  helpOpen: false,
   updateStatus: "Noch nicht geprüft.",
   updateState: "idle",
   updateReady: false,
@@ -212,11 +215,18 @@ function createEntry({ date, instrument, minutes, category, note, savedAt }) {
   };
 }
 
+function createStudentId() {
+  const stamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 8);
+  return `ft-${stamp}-${random}`;
+}
+
 function hydrateState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       state.entries = [...defaultEntries];
+      state.studentId = createStudentId();
       persistState();
       return;
     }
@@ -225,9 +235,11 @@ function hydrateState() {
     state.entries = Array.isArray(parsed.entries) ? parsed.entries : [...defaultEntries];
     state.instrument = parsed.instrument || instruments[0];
     state.profileName = parsed.profileName || "Mila";
+    state.studentId = parsed.studentId || createStudentId();
     state.goal = Number(parsed.goal) || 15;
   } catch {
     state.entries = [...defaultEntries];
+    state.studentId = createStudentId();
   }
 }
 
@@ -238,6 +250,7 @@ function persistState() {
       entries: state.entries,
       instrument: state.instrument,
       profileName: state.profileName,
+      studentId: state.studentId,
       goal: state.goal,
     }),
   );
@@ -252,6 +265,7 @@ function exportBackupPayload() {
       entries: state.entries,
       instrument: state.instrument,
       profileName: state.profileName,
+      studentId: state.studentId,
       goal: state.goal,
       reportRange: state.reportRange,
     },
@@ -282,6 +296,7 @@ async function importBackupFile(file) {
   state.entries = backup.entries;
   state.instrument = backup.instrument || instruments[0];
   state.profileName = backup.profileName || "Mila";
+  state.studentId = backup.studentId || state.studentId || createStudentId();
   state.goal = Number(backup.goal) || 15;
   state.reportRange = backup.reportRange || "week";
   persistState();
@@ -297,6 +312,45 @@ function createBackupChecksum(payload) {
   }
 
   return `ft-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function exportReportPackagePayload() {
+  const report = getReportData(state.reportRange);
+  const payload = {
+    kind: "fleisstakt-berichtspaket",
+    exportedAt: new Date().toISOString(),
+    appVersion: state.versionInfo.appVersion,
+    student: {
+      studentId: state.studentId,
+      displayName: state.profileName,
+      instrument: state.instrument,
+      goal: state.goal,
+    },
+    report: {
+      range: report.range,
+      label: report.label,
+      minutes: report.minutes,
+      uniqueDaysCount: report.uniqueDaysCount,
+      notedCount: report.notedCount,
+      streak: report.stats.streak,
+      unlockedCards: report.unlockedCards.map((card) => ({
+        id: card.id,
+        title: card.title,
+        description: card.description,
+      })),
+      entries: report.entries.map((entry) => ({ ...entry })),
+    },
+  };
+
+  return {
+    ...payload,
+    checksum: createBackupChecksum(payload),
+  };
+}
+
+function createReportPackageFileName() {
+  const safeName = state.profileName.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "lernende";
+  return `fleisstakt-berichtspaket-${safeName}-${createDateStamp()}.json`;
 }
 
 function getTodayKey() {
@@ -481,6 +535,7 @@ function todayScreen() {
   const stats = getStats();
   const cards = getCards(stats);
   const progress = nextCardProgress(stats);
+  const unlockedCount = cards.filter((card) => card.unlocked).length;
 
   return `
     <section class="screen screen-today">
@@ -496,33 +551,37 @@ function todayScreen() {
         </div>
       </div>
 
-      <section class="daily-focus">
-        <div>
+      <section class="stats-strip stats-strip-primary">
+        <div class="stat-pill">
           <p class="label">Heutiges Ziel</p>
           <strong>${state.goal} Minuten</strong>
         </div>
-        <div>
+        <div class="stat-pill">
           <p class="label">Serie</p>
           <strong>${stats.streak} Tage</strong>
         </div>
-        <div>
+        <div class="stat-pill">
           <p class="label">Diese Woche</p>
           <strong>${stats.weekMinutes} Minuten</strong>
         </div>
       </section>
 
-      <section class="daily-focus">
-        <div>
+      <section class="stats-strip stats-strip-secondary">
+        <div class="stat-line">
           <p class="label">Heute gespielt</p>
           <strong>${stats.todayMinutes} Minuten</strong>
         </div>
-        <div>
+        <div class="stat-line">
           <p class="label">Einträge</p>
           <strong>${stats.entries.length}</strong>
         </div>
-        <div>
+        <div class="stat-line">
           <p class="label">Notizen</p>
           <strong>${stats.notedEntryCount}</strong>
+        </div>
+        <div class="stat-line">
+          <p class="label">Kärtchen</p>
+          <strong>${unlockedCount}/${cards.length}</strong>
         </div>
       </section>
 
@@ -614,6 +673,7 @@ function logScreen() {
 function cardsScreen() {
   const stats = getStats();
   const cards = getCards(stats);
+  const unlockedCount = cards.filter((card) => card.unlocked).length;
 
   return `
     <section class="screen screen-cards">
@@ -621,31 +681,24 @@ function cardsScreen() {
         <h2>Fleiß-Kärtchen</h2>
         <p>Sammle kleine Etappensiege statt trockener Statistiken.</p>
       </div>
-      <div class="daily-focus">
-        <div>
-          <p class="label">Freigeschaltet</p>
-          <strong>${cards.filter((card) => card.unlocked).length}/${cards.length}</strong>
+      <section class="cards-hero">
+        <div class="cards-hero-copy">
+          <p class="label">Sammelstand</p>
+          <h3>${unlockedCount} von ${cards.length} gesammelt</h3>
+          <p>Serie ${stats.streak} Tage · ${stats.weekMinutes} Minuten in dieser Woche</p>
         </div>
-        <div>
-          <p class="label">Serie</p>
-          <strong>${stats.streak} Tage</strong>
+        <div class="album-strip">
+          ${cards
+            .map(
+              (card) => `
+                <div class="album-chip ${card.unlocked ? "is-unlocked" : "is-locked"} accent-${card.accent}">
+                  <span>${card.symbol}</span>
+                  <strong>${card.title}</strong>
+                </div>
+              `,
+            )
+            .join("")}
         </div>
-        <div>
-          <p class="label">Wochenzeit</p>
-          <strong>${stats.weekMinutes} Min</strong>
-        </div>
-      </div>
-      <section class="album-strip">
-        ${cards
-          .map(
-            (card) => `
-              <div class="album-chip ${card.unlocked ? "is-unlocked" : "is-locked"} accent-${card.accent}">
-                <span>${card.symbol}</span>
-                <strong>${card.title}</strong>
-              </div>
-            `,
-          )
-          .join("")}
       </section>
       <div class="card-grid">
         ${cards
@@ -740,6 +793,10 @@ function profileScreen() {
           ? `
       <form class="settings-form" id="profile-form">
         <label class="field">
+          <span>Lernenden-ID</span>
+          <input type="text" value="${escapeHtml(state.studentId)}" readonly />
+        </label>
+        <label class="field">
           <span>Name</span>
           <input id="profile-name" type="text" value="${escapeHtml(state.profileName)}" maxlength="24" />
         </label>
@@ -761,6 +818,7 @@ function profileScreen() {
           <strong class="range-value" id="goal-value">${state.goal} Minuten</strong>
         </label>
         <button class="primary-button" id="save-profile" type="submit">Profil speichern</button>
+        <button class="secondary-action" id="export-report-package" type="button">FleißTakt-Berichtspaket exportieren</button>
       </form>
       <div class="profile-stack">
         <article class="profile-line">
@@ -905,15 +963,15 @@ function currentScreen() {
 function render() {
   root.innerHTML = `
     <div class="app-shell">
-      <div class="app-frame ${state.celebrate ? "is-celebrating" : ""}">
+      <div class="app-frame ${state.celebrate ? "is-celebrating" : ""} ${(state.settingsOpen || state.helpOpen) ? "is-modal-open" : ""}">
         <header class="topbar">
           <div>
             <p class="eyebrow">Üben sichtbar machen</p>
             <h1>FleißTakt</h1>
           </div>
           <div class="topbar-actions">
-            <button class="ghost-button ${state.installReady ? "" : "is-disabled"}" type="button" id="install-app">
-              ${state.installReady ? "Installieren" : "Schon als App nutzbar"}
+            <button class="ghost-button" type="button" id="open-help">
+              Hilfe
             </button>
             <button class="ghost-button" type="button" id="open-settings">
               Einstellungen
@@ -945,8 +1003,8 @@ function render() {
         }
       </div>
 
-      <dialog class="settings-dialog" id="settings-dialog" ${state.settingsOpen ? "open" : ""}>
-        <form method="dialog" class="settings-sheet">
+      <dialog class="settings-dialog" id="settings-dialog">
+        <form method="dialog" class="settings-sheet" tabindex="-1">
           <div class="section-head">
             <h2>Einstellungen</h2>
             <p>Installieren, Backup und Updates an einem Ort.</p>
@@ -1006,6 +1064,45 @@ function render() {
           </div>
         </form>
       </dialog>
+
+      <dialog class="settings-dialog" id="help-dialog">
+        <form method="dialog" class="settings-sheet" tabindex="-1">
+          <div class="section-head">
+            <h2>Schneller Einstieg</h2>
+            <p>So klappt der Start mit FleißTakt in wenigen Schritten.</p>
+          </div>
+
+          <section class="settings-block">
+            <h3>So startest du</h3>
+            <div class="help-list">
+              <article class="help-step">
+                <strong>1. Profil öffnen</strong>
+                <p>Im Profilbereich starten Lernende mit den Grundeinstellungen.</p>
+              </article>
+              <article class="help-step">
+                <strong>2. Namen eintragen</strong>
+                <p>So wirkt die App persönlich und der Bericht ist klar zuordenbar.</p>
+              </article>
+              <article class="help-step">
+                <strong>3. Hauptinstrument wählen</strong>
+                <p>Zum Beispiel Klavier, Violine, Gitarre oder Cello.</p>
+              </article>
+              <article class="help-step">
+                <strong>4. Tagesziel festlegen</strong>
+                <p>Zum Beispiel 10, 15 oder 20 Minuten, passend zum Alter und Niveau.</p>
+              </article>
+              <article class="help-step">
+                <strong>5. Ersten Eintrag machen</strong>
+                <p>Danach kann sofort die erste Übeeinheit eingetragen werden.</p>
+              </article>
+            </div>
+          </section>
+
+          <div class="settings-actions settings-actions-close">
+            <button class="secondary-action" type="button" id="close-help">Schließen</button>
+          </div>
+        </form>
+      </dialog>
     </div>
   `;
 
@@ -1013,6 +1110,54 @@ function render() {
 }
 
 function bindEvents() {
+  const settingsDialog = document.querySelector("#settings-dialog");
+  if (settingsDialog) {
+    if (state.settingsOpen && !settingsDialog.open) {
+      settingsDialog.showModal();
+    }
+
+    if (state.settingsOpen) {
+      window.requestAnimationFrame(() => {
+        const nextFocusTarget = state.settingsFocusId
+          ? settingsDialog.querySelector(`#${state.settingsFocusId}`)
+          : settingsDialog.querySelector(".settings-sheet");
+
+        nextFocusTarget?.focus?.();
+      });
+    }
+
+    settingsDialog.addEventListener("close", () => {
+      if (state.settingsOpen) {
+        state.settingsOpen = false;
+        state.settingsFocusId = "";
+        render();
+      }
+    });
+  }
+
+  const helpDialog = document.querySelector("#help-dialog");
+  if (helpDialog) {
+    if (state.helpOpen && !helpDialog.open) {
+      helpDialog.showModal();
+    }
+
+    helpDialog.addEventListener("close", () => {
+      if (state.helpOpen) {
+        state.helpOpen = false;
+        render();
+      }
+    });
+  }
+
+  settingsDialog?.querySelectorAll("button[id], input[id], select[id], textarea[id]").forEach((element) => {
+    element.addEventListener("click", () => {
+      state.settingsFocusId = element.id || "";
+    });
+    element.addEventListener("focus", () => {
+      state.settingsFocusId = element.id || "";
+    });
+  });
+
   document.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeScreen = button.dataset.nav;
@@ -1068,13 +1213,6 @@ function bindEvents() {
     });
   }
 
-  const installButton = document.querySelector("#install-app");
-  if (installButton) {
-    installButton.addEventListener("click", async () => {
-      await handleInstallPrompt();
-    });
-  }
-
   const settingsInstallButton = document.querySelector("#settings-install-app");
   if (settingsInstallButton) {
     settingsInstallButton.addEventListener("click", async () => {
@@ -1082,10 +1220,19 @@ function bindEvents() {
     });
   }
 
+  const openHelpButton = document.querySelector("#open-help");
+  if (openHelpButton) {
+    openHelpButton.addEventListener("click", () => {
+      state.helpOpen = true;
+      render();
+    });
+  }
+
   const openSettingsButton = document.querySelector("#open-settings");
   if (openSettingsButton) {
     openSettingsButton.addEventListener("click", () => {
       state.settingsOpen = true;
+      state.settingsFocusId = "settings-install-app";
       render();
     });
   }
@@ -1094,7 +1241,16 @@ function bindEvents() {
   if (closeSettingsButton) {
     closeSettingsButton.addEventListener("click", () => {
       state.settingsOpen = false;
-      render();
+      state.settingsFocusId = "";
+      settingsDialog?.close();
+    });
+  }
+
+  const closeHelpButton = document.querySelector("#close-help");
+  if (closeHelpButton) {
+    closeHelpButton.addEventListener("click", () => {
+      state.helpOpen = false;
+      helpDialog?.close();
     });
   }
 
@@ -1234,6 +1390,24 @@ function bindEvents() {
       state.goal = Number(document.querySelector("#profile-goal")?.value) || 15;
       persistState();
       state.celebrationText = "Profil aktualisiert.";
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 1800);
+    });
+  }
+
+  const exportReportPackageButton = document.querySelector("#export-report-package");
+  if (exportReportPackageButton) {
+    exportReportPackageButton.addEventListener("click", () => {
+      downloadFile({
+        filename: createReportPackageFileName(),
+        content: JSON.stringify(exportReportPackagePayload(), null, 2),
+        mimeType: "application/json;charset=utf-8",
+      });
+      state.celebrationText = "FleißTakt-Berichtspaket exportiert.";
       state.celebrate = true;
       render();
       window.setTimeout(() => {
