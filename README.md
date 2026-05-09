@@ -118,6 +118,39 @@ Das Berichtswesen soll nicht nur dokumentieren, sondern Gespräche erleichtern. 
 
 Neben der Lernenden-App gibt es jetzt eine eigene `FleißTakt Lehrkraft`-Version. Sie ist als getrennte Oberfläche für iPad oder Desktop gedacht und kann unabhängig von der Lernenden-App installiert werden.
 
+### Wozu sie da ist
+
+Die Lehrkraft-App ist die Verwaltungs- und Übersichtsoberfläche für den Unterricht. Während die Lernenden-App auf tägliches Eintragen und Motivation ausgerichtet ist, bündelt die Lehrkraft-App viele Berichtspakete an einem Ort.
+
+So entsteht kein versteckter Lehrkraftbereich in der Lernenden-App, sondern eine eigene Arbeitsumgebung für:
+
+- Übersicht über mehrere Lernende
+- sichere Übernahme von Berichtspaketen
+- Pflege von Klassen und Kontaktdaten
+- Vorbereitung von Gesprächen und Unterricht
+
+### Was die Lehrkraft dort konkret sieht
+
+In der Lehrkraft-App sieht man nicht nur einzelne Berichte, sondern eine geordnete Übersicht:
+
+- alle importierten Lernenden
+- zugehörige Klassen
+- den aktuellen Berichtsstand pro lernender Person
+- Minuten, Einträge, Übetage und Kärtchen
+- letzte Einträge als Gesprächsgrundlage
+- bearbeitbare Stammdaten wie Vorname, Nachname, E-Mail oder Messenger-ID
+
+### Wie die Lehrkraft damit arbeitet
+
+Der typische Ablauf ist bewusst einfach gehalten:
+
+1. Lernende exportieren ein FleißTakt-Berichtspaket aus ihrem Profil.
+2. Die Lehrkraft importiert ein oder mehrere Pakete in die Lehrkraft-App.
+3. Die App erkennt bekannte Lernende über die feste Lernenden-ID.
+4. Neue Daten werden automatisch mit vorhandenen Daten zusammengeführt.
+5. Die Lehrkraft kann Klassen zuordnen, Namen ergänzen und Kontakte pflegen.
+6. Auf dieser Basis kann sie Berichte, Fortschritt und letzte Schwerpunkte für den Unterricht nutzen.
+
 ### Was die Lehrkraft-App bietet
 
 - Import von FleißTakt-Berichtspaketen
