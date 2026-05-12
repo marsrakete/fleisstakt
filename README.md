@@ -1,11 +1,11 @@
 # FleißTakt
 
-FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App soll helfen, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden.
+FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App hilft dabei, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden. Dazu kommen eine eigene Lehrkräfte-App und ein WordPress-Plugin als gemeinsame Zentrale.
 
 ## Projektinfos
 
-- App: [https://marsrakete.github.io/fleisstakt/](https://marsrakete.github.io/fleisstakt/)
-- Lehrkraft-App: [https://marsrakete.github.io/fleisstakt/teacher.html](https://marsrakete.github.io/fleisstakt/teacher.html)
+- App für Lernende: [https://marsrakete.github.io/fleisstakt/](https://marsrakete.github.io/fleisstakt/)
+- Lehrkräfte-App: [https://marsrakete.github.io/fleisstakt/teacher.html](https://marsrakete.github.io/fleisstakt/teacher.html)
 - Repository: [https://github.com/marsrakete/fleisstakt](https://github.com/marsrakete/fleisstakt)
 - Kontakt: [millux@marsrakete.de](mailto:millux@marsrakete.de)
 
@@ -17,201 +17,236 @@ Musiklernende tragen nach dem Üben kurz ein:
 - an welchem Bereich sie gearbeitet haben
 - optional eine kleine Notiz
 
-Dafür bekommen sie Rückmeldung in Form von Fortschritt, Serien und sammelbaren Fleiß-Kärtchen.
+Dafür bekommen sie Rückmeldung in Form von Fortschritt, Serien und Kärtchen-Zielen. Die App soll nicht kontrollierend wirken, sondern motivieren und das Gespräch über Üben erleichtern.
 
-Die App soll nicht kontrollierend wirken, sondern motivieren.
+## Warum WordPress als Zentrale?
 
-## Kurz erklärt in 1 Minute
+FleißTakt nutzt inzwischen ein eigenes WordPress-Plugin als Server-Zentrale. Das hat einen sehr praktischen Grund: WordPress ist weit verbreitet, auf vielen bestehenden Websites schon vorhanden und für viele Musikschulen, Lehrkräfte oder Träger technisch leichter zugänglich als ein komplett eigener Backend-Stack.
 
-FleißTakt ist eine kleine Übe-App für Musiklernende. Nach dem Üben tragen Lernende mit wenigen Klicks ein, wie lange sie geübt haben und woran sie gearbeitet haben. Auf Wunsch können sie noch eine kurze Notiz ergänzen.
+Vorteile dieser Entscheidung:
 
-Das Besondere ist: Die App arbeitet nicht mit Druck, sondern mit Motivation. Wer regelmäßig übt, sammelt Fleiß-Kärtchen und sieht seinen Fortschritt. So wird Üben sichtbarer und kleine Erfolge werden direkt belohnt.
+- große Verbreitung und bekannte Hosting-Umgebung
+- einfacher Plugin-Upload auf bestehende WordPress-Installationen
+- zentrale Datenhaltung für Lehrkräfte, Lernende, Profile, Berichte und Kärtchen
+- Web-Administration ohne eigene Server-Oberfläche außerhalb von WordPress
+- gute Basis für späteren Ausbau über mehrere Geräte und mehrere Lehrkräfte hinweg
 
-Für die Lehrkraft entsteht daraus eine einfache Gesprächsgrundlage. Man sieht, ob regelmäßig geübt wurde, welche Schwerpunkte zuletzt wichtig waren und wie Lernende ihr Üben selbst wahrnehmen. Die App soll also nicht überwachen, sondern das Üben strukturieren und positive Gespräche darüber erleichtern.
+WordPress ist hier also nicht das Produkt selbst, sondern die robuste und niedrigschwellige Infrastruktur darunter.
 
-## Wie sich die Kärtchen entwickeln
+## Wie die Kommunikation jetzt funktioniert
 
-```mermaid
-flowchart TD
-    A["Lernende üben zu Hause"] --> B["Kurzer Eintrag in FleißTakt"]
-    B --> C["Übezeit, Schwerpunkt und optional Notiz werden festgehalten"]
-    C --> D["Die App erkennt regelmäßiges Üben und kleine Fortschritte"]
-
-    D --> E["Kärtchen 1: Warm gespielt"]
-    D --> F["Kärtchen 2: Taktsicher"]
-    D --> G["Kärtchen 3: Morgenklang"]
-    D --> H["Kärtchen 4: Bühnenmut"]
-
-    E --> I["Ein sichtbarer Erfolg entsteht"]
-    F --> I
-    G --> I
-    H --> I
-
-    I --> J["Motivation steigt"]
-    J --> K["Regelmäßiges Üben wird leichter"]
-```
-
-## Ablauf zwischen Lernenden und Lehrkraft
+FleißTakt arbeitet nicht mehr nur mit manuell ausgetauschten Berichtspaketen. Der Alltag läuft jetzt primär über den Server-Sync mit dem WordPress-Plugin.
 
 ```mermaid
-flowchart TD
-    A["Lernende üben zu Hause"] --> B["Lernende tragen Übezeit und Schwerpunkt ein"]
-    B --> C["Die App zeigt Fortschritt und Fleiß-Kärtchen"]
-    C --> D["Die Entwicklung wird sichtbar"]
-
-    D --> E["Im Unterricht wird die Übersicht gemeinsam angesehen"]
-    E --> F["Die Lehrkraft sieht Regelmäßigkeit und letzte Schwerpunkte"]
-    F --> G["Gemeinsames Gespräch über Fortschritte, Schwierigkeiten und nächste Ziele"]
-    G --> H["Lernende gehen mit einer klaren Aufgabe in die nächste Übewoche"]
+flowchart LR
+    A["Lernenden-App"] -->|Berichte und Profil-Sync| B["WordPress-Plugin"]
+    C["Lehrkräfte-App"] -->|Klassen, Lernende, Profile, Kärtchen| B
+    B -->|Profil, Ziele, Zuordnungen| A
+    B -->|Übersichten und Berichte| C
 ```
+
+Im laufenden Betrieb bedeutet das:
+
+- Lernende synchronisieren ihre Einträge mit dem Server.
+- Die Lernenden-App lädt Profil, Ziel-Kärtchen und Server-Stand wieder nach.
+- Lehrkräfte synchronisieren Klassen, Lernende, Profile und Kärtchen mit demselben Server.
+- Das WordPress-Plugin ist die gemeinsame Wahrheit für Unterrichtsbeziehungen und Zuweisungen.
+
+Manuelle Exporte bleiben nur noch als Fallback oder für Sonderfälle sinnvoll, nicht mehr als Hauptweg.
+
+## Mandantenfähigkeit
+
+Sobald mehrere Lehrkräfte mit derselben Installation arbeiten, muss klar getrennt bleiben, wer welche Daten sehen und bearbeiten darf. Genau das meint hier Mandantenfähigkeit.
+
+Warum das wichtig ist:
+
+- eine Lehrkraft soll nur die eigenen Unterrichtsbeziehungen sehen
+- mehrere Lehrkräfte können denselben WordPress-Server nutzen
+- Lernende können mehreren Lehrkräften zugeordnet sein, zum Beispiel für verschiedene Instrumente
+- Kärtchen, Berichte und Profile müssen pro Unterrichtskontext sauber getrennt bleiben
+
+Das Plugin kann als Admin-Werkzeug alles sehen und pflegen. Im normalen Lehrkräfte-Alltag sorgt die Mandantenlogik aber dafür, dass die Lehrkräfte-App nur die passenden Daten lädt.
+
+## Profile statt nur eine Person
+
+In FleißTakt ist eine lernende Person nicht automatisch nur ein einziges Profil. Stattdessen trennt das System zwischen Person und Profil.
+
+```mermaid
+flowchart LR
+    L["Lernende Person<br/>Mila Beispiel"] --> P1["Profil 1<br/>Klavier<br/>Ziel 20 Min"]
+    L --> P2["Profil 2<br/>Violine<br/>Ziel 15 Min"]
+    L --> P3["Profil 3<br/>Gesang<br/>Ziel 10 Min"]
+
+    P1 --> T1["Lehrkraft A"]
+    P2 --> T2["Lehrkraft B"]
+    P3 --> T3["Lehrkraft C"]
+
+    P1 --> C1["Klasse Mittwoch"]
+    P2 --> C2["Klasse Freitag"]
+
+    P1 --> S1["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
+    P2 --> S2["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
+    P3 --> S3["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
+```
+
+Kurz gesagt:
+
+- Die `lernende Person` ist der Mensch selbst.
+- Das `Profil` ist der konkrete Unterrichtskontext.
+- Lehrkraft, Klasse, Ziele, Berichte und Feedback hängen am Profil, nicht direkt an der Person.
+
+### Technische Sicht
+
+```mermaid
+flowchart TB
+    ST["Student<br/>Personenstammdaten"] --> PR1["Profile<br/>Profil A"]
+    ST --> PR2["Profile<br/>Profil B"]
+
+    TE1["Teacher"] --> AS1["Assignment"]
+    TE2["Teacher"] --> AS2["Assignment"]
+    AS1 --> PR1
+    AS2 --> PR2
+
+    CL1["Class"] --> PR1
+    CL2["Class"] --> PR2
+
+    PR1 --> RE1["Reports"]
+    PR1 --> CA1["Card Assignments"]
+    PR1 --> FB1["Feedback Ballot"]
+
+    PR2 --> RE2["Reports"]
+    PR2 --> CA2["Card Assignments"]
+    PR2 --> FB2["Feedback Ballot"]
+
+    FR1["Feedback Round<br/>für Lehrkraft A"] --> FB1
+    FR2["Feedback Round<br/>für Lehrkraft B"] --> FB2
+
+    FB1 --> FA1["Feedback Answers<br/>anonym gespeichert"]
+    FB2 --> FA2["Feedback Answers<br/>anonym gespeichert"]
+```
+
+Diese technische Sicht hilft bei drei wichtigen Regeln:
+
+- `Assignments` verbinden Lehrkraft und Profil.
+- `Reports`, `Kärtchen` und `Feedback-Berechtigung` laufen profilbezogen.
+- Die eigentlichen `Feedback Answers` werden getrennt von der Personen-Zuordnung gespeichert, damit die Auswertung anonym bleibt.
+
+Eine lernende Person ist der Mensch selbst:
+
+- Vorname
+- Nachname
+- E-Mail
+- Messenger-ID
+- optionale externe ID
+
+Ein Profil ist die konkrete Unterrichtsbeziehung:
+
+- Instrument
+- Profilbezeichnung
+- Tagesziel
+- zugeordnete Lehrkraft
+- optionale Klasse
+- Server-ID und Verbindungscode
+- eigene Berichte und eigene Kärtchen-Ziele
+
+Das ist wichtig, weil ein Lernender zum Beispiel gleichzeitig haben kann:
+
+- Klavier bei Lehrkraft A
+- Violine bei Lehrkraft B
+- Gesang bei Lehrkraft C
+
+Dann sind das drei getrennte Profile mit jeweils eigenem Kontext, eigener Synchronisation und eigenen Zielen.
+
+## Kärtchen und Ziele
+
+FleißTakt kennt weiterhin motivierende Ziel-Kärtchen. Diese können inzwischen nicht nur global existieren, sondern durch Lehrkräfte gezielt gepflegt und zugewiesen werden.
+
+Dabei gilt:
+
+- Kärtchen können in der Lehrkräfte-App erstellt werden
+- Kärtchen werden über das WordPress-Plugin zentral gespeichert
+- Zuweisungen können für alle, für eine Klasse oder individuell für ein einzelnes Profil gelten
+- die Lernenden-App zeigt im verbundenen Modus nur die wirklich zugewiesenen Ziele
+
+So bleibt die Motivation persönlich und passend zum jeweiligen Unterricht.
+
+## Onboarding für Lehrkräfte
+
+Der empfohlene Ablauf für Lehrkräfte ist jetzt:
+
+1. WordPress-Plugin installieren und aktivieren.
+2. Lehrkraft im Plugin anlegen oder mit bestehendem Kontext arbeiten.
+3. In der Lehrkräfte-App Klassen und Lernende anlegen.
+4. Für jede Unterrichtsbeziehung ein eigenes Profil anlegen.
+5. Lehrkräfte-App mit dem Server synchronisieren.
+6. Für jedes Profil `Lernenden-ID` und `Verbindungscode` anzeigen, kopieren oder teilen.
+7. Optional eigene Kärtchen anlegen und passenden Profilen oder Klassen zuweisen.
+
+Wichtig dabei:
+
+- Eine Person kann mehrere Profile haben.
+- Die Verteilung an Lernende läuft nicht mehr primär über Berichtspakete, sondern über die Server-Verbindung.
+- Die Lehrkräfte-App ist die tägliche Arbeitsoberfläche, das Plugin die zentrale Administration und Datenhaltung.
+
+## Onboarding für Lernende
+
+Für Lernende ist der Einstieg jetzt deutlich einfacher:
+
+1. Lernenden-App öffnen oder als PWA installieren.
+2. In den Einstellungen `Mit Lehrkraft verbinden` öffnen.
+3. `Lernenden-ID` und `Verbindungscode` eingeben.
+4. Profil vom Server laden.
+5. Danach normal üben, Einträge speichern und mit dem Server synchronisieren.
+
+Nach dieser ersten Kopplung kennt die App:
+
+- Anzeigename
+- Instrument
+- Profilbezeichnung
+- Tagesziel
+- Server-Zuordnung
+- zugewiesene Ziel-Kärtchen
+
+Danach genügt im Alltag der normale Server-Sync.
+
+## Was die Lernenden-App im Alltag tut
+
+Lernende:
+
+- tragen Übezeit, Schwerpunkt und optional eine Notiz ein
+- sehen Fortschritt, Serie und zugewiesene Ziel-Kärtchen
+- synchronisieren ihre Daten mit dem WordPress-Server
+- können mehrere Profile auf einem Gerät verwalten und umschalten
+
+Im verbundenen Modus ist das Profil führend. Das bedeutet:
+
+- Instrument und Profilkontext kommen vom Server
+- nur zugewiesene Ziele werden angezeigt
+- die Synchronisation läuft profilbezogen
+
+## Was die Lehrkräfte-App im Alltag tut
+
+Die Lehrkräfte-App ist die Arbeitsoberfläche für Unterricht und Verwaltung. Dort können Lehrkräfte:
+
+- Klassen pflegen
+- Lernende anlegen
+- mehrere Profile pro lernender Person verwalten
+- Kärtchen-Ziele erstellen
+- Kärtchen Klassen oder einzelnen Profilen zuweisen
+- Daten mit dem WordPress-Server synchronisieren
+- Berichte und letzte Einträge als Gesprächsgrundlage nutzen
+
+Die Lehrkräfte-App ist bewusst als eigene PWA getrennt von der Lernenden-App gedacht.
 
 ## Berichtswesen
 
-FleißTakt bietet nicht nur eine laufende Ansicht in der App, sondern auch Berichte für die Begleitung durch Lehrkraft oder Eltern.
+FleißTakt bietet weiterhin Berichte für Woche, Monat und Gesamtzeitraum. Diese Berichte können in der App angesehen, geteilt, kopiert oder heruntergeladen werden.
 
-### Berichtstypen
+Im neuen Zielbild gilt aber:
 
-- Wochenbericht
-- Monatsbericht
-- Gesamtbericht
-
-Die Lehrkraft kann in der Begleitansicht auswählen, welcher Zeitraum gerade betrachtet werden soll. Alle Ausgaben beziehen sich dann auf genau diesen Zeitraum.
-
-### Was ein Bericht zeigt
-
-- Übezeit im gewählten Zeitraum
-- aktuelle Serie
-- Anzahl der Übetage
-- Einträge mit Notizen
-- freigeschaltete Fleiß-Kärtchen
-- letzte Einträge mit Schwerpunkt und Dauer
-
-### Welche Ausgaben möglich sind
-
-- Bericht ansehen
-- Bericht teilen
-- Berichtstext kopieren
-- Bericht per Mail vorbereiten
-- HTML-Bericht herunterladen
-- Textbericht herunterladen
-- Bericht drucken oder als PDF speichern
-- FleißTakt-Berichtspaket exportieren
-
-### Berichtspaket für Lehrkräfte
-
-Zusätzlich zu den normalen Berichten kann die Lernenden-App ein `FleißTakt-Berichtspaket` exportieren. Dieses Paket enthält:
-
-- feste Lernenden-ID
-- Name, Instrument und Tagesziel
-- Berichtsdaten für Woche, Monat oder Gesamt
-- zugehörige Einträge
-- freigeschaltete Fleiß-Kärtchen
-- Prüfsumme zum Erkennen veränderter Daten
-
-Die Prüfsumme wird beim Import in der Lehrkraft-App erneut geprüft. Wenn das Paket verändert oder beschädigt wurde, wird der Import verweigert.
-
-### Gerätewechsel und Lernenden-ID
-
-Die Lernenden-ID gehört zum Profil auf dem Gerät. Damit dieselbe lernende Person bei einem Gerätewechsel weiter korrekt erkannt wird, sollte vor dem Wechsel immer ein Backup exportiert und auf dem neuen Gerät importiert werden.
-
-Wenn das nicht passiert und eine neue Lernenden-ID entsteht, kann die Lehrkraft doppelte Einträge später in der Lehrkraft-App manuell zusammenführen.
-
-### Wofür das sinnvoll ist
-
-Das Berichtswesen soll nicht nur dokumentieren, sondern Gespräche erleichtern. Eine Lehrkraft kann je nach Situation schnell zwischen kurzer Rückmeldung, ausführlicher Übersicht und druckbarer Fassung wechseln.
-
-## Lehrkraft-App
-
-Neben der Lernenden-App gibt es jetzt eine eigene `FleißTakt Lehrkraft`-Version. Sie ist als getrennte Oberfläche für iPad oder Desktop gedacht und kann unabhängig von der Lernenden-App installiert werden.
-
-### Wozu sie da ist
-
-Die Lehrkraft-App ist die Verwaltungs- und Übersichtsoberfläche für den Unterricht. Während die Lernenden-App auf tägliches Eintragen und Motivation ausgerichtet ist, bündelt die Lehrkraft-App viele Berichtspakete an einem Ort.
-
-So entsteht kein versteckter Lehrkraftbereich in der Lernenden-App, sondern eine eigene Arbeitsumgebung für:
-
-- Übersicht über mehrere Lernende
-- sichere Übernahme von Berichtspaketen
-- Pflege von Klassen und Kontaktdaten
-- Vorbereitung von Gesprächen und Unterricht
-
-### Was die Lehrkraft dort konkret sieht
-
-In der Lehrkraft-App sieht man nicht nur einzelne Berichte, sondern eine geordnete Übersicht:
-
-- alle importierten Lernenden
-- zugehörige Klassen
-- den aktuellen Berichtsstand pro lernender Person
-- Minuten, Einträge, Übetage und Kärtchen
-- letzte Einträge als Gesprächsgrundlage
-- bearbeitbare Stammdaten wie Vorname, Nachname, E-Mail oder Messenger-ID
-
-### Wie die Lehrkraft damit arbeitet
-
-Der typische Ablauf ist bewusst einfach gehalten:
-
-1. Lernende exportieren ein FleißTakt-Berichtspaket aus ihrem Profil.
-2. Die Lehrkraft importiert ein oder mehrere Pakete in die Lehrkraft-App.
-3. Die App erkennt bekannte Lernende über die feste Lernenden-ID.
-4. Neue Daten werden automatisch mit vorhandenen Daten zusammengeführt.
-5. Falls nach einem Gerätewechsel doch eine neue ID entstanden ist, können doppelte Einträge manuell zusammengeführt werden.
-6. Die Lehrkraft kann Klassen zuordnen, Namen ergänzen und Kontakte pflegen.
-7. Auf dieser Basis kann sie Berichte, Fortschritt und letzte Schwerpunkte für den Unterricht nutzen.
-
-### Was die Lehrkraft-App bietet
-
-- Import von FleißTakt-Berichtspaketen
-- automatische Zuordnung und Merge über die Lernenden-ID
-- Ablehnung manipulierter Pakete durch Prüfsummenprüfung
-- manuelles Zusammenführen doppelter Lernenden-Einträge nach Gerätewechsel
-- Klassen anlegen und verwalten
-- Lernende mit Vorname, Nachname, E-Mail und Messenger-ID pflegen
-- Übersichten zu Minuten, Einträgen, Berichtsstand und Kärtchen
-- eigenes Backup exportieren und importieren
-
-### Wie Berichte ankommen
-
-1. Lernende exportieren im Profil ein FleißTakt-Berichtspaket.
-2. Die Lehrkraft importiert ein oder mehrere Pakete in die Lehrkraft-App.
-3. Die App führt die Daten automatisch zusammen.
-4. Bereits bekannte Lernende werden über die feste Lernenden-ID erkannt.
-5. Veränderte oder ungültige Pakete werden abgelehnt.
-
-## Aus Sicht der Lernenden
-
-FleißTakt hilft mir dabei, mein tägliches Üben festzuhalten, ohne dass es sich wie Kontrolle anfühlt. Ich trage einfach ein, wie lange ich geübt habe, woran ich gearbeitet habe und kann mir auf Wunsch noch eine kleine Notiz dazu machen. So sehe ich schnell, was ich schon geschafft habe.
-
-Das Motivierende daran ist: Ich sammle nach und nach Fleiß-Kärtchen. Wenn ich regelmäßig übe, morgens schon etwas mache oder öfter mit einer Notiz eintrage, werden neue Kärtchen freigeschaltet. Dadurch fühlt sich Üben nicht nur nach Pflicht an, sondern auch nach kleinen Erfolgen.
-
-## Aus Sicht der Lehrkraft
-
-FleißTakt gibt einen ruhigen Überblick darüber, ob Lernende regelmäßig üben und wie sich ihre Gewohnheit entwickelt. Man sieht nicht nur Minuten, sondern auch, ob eine stabile Routine entsteht, welche Inhalte zuletzt geübt wurden und ob Lernende sich Gedanken zu ihrem Üben machen.
-
-Wichtig ist dabei: Die App soll nicht Druck machen, sondern Gesprächsanlässe schaffen. Statt nur zu fragen „Hast du geübt?“ kann man gemeinsam schauen, was schon gut läuft, wo Motivation entstanden ist und an welcher Stelle Lernende Unterstützung brauchen. Die kleine Übersicht für Lehrkräfte und Eltern ist deshalb bewusst positiv und einfach gehalten.
-
-## Ablaufplan
-
-### Was machen Lernende?
-
-1. Lernende öffnen die App nach dem Üben auf dem Handy.
-2. Sie tragen ein, wie viele Minuten sie geübt haben.
-3. Sie wählen aus, woran sie gearbeitet haben, zum Beispiel Technik, Stück oder freies Spiel.
-4. Wenn sie möchten, ergänzen sie eine kurze Notiz, zum Beispiel was gut geklappt hat oder was noch schwer war.
-5. Die App speichert den Eintrag sofort.
-6. Lernende sehen ihren Fortschritt, ihre Übe-Serie und neue Fleiß-Kärtchen.
-7. Wenn Berichte an die Lehrkraft gehen sollen, exportieren sie zusätzlich ein FleißTakt-Berichtspaket.
-
-### Wie kontrolliert oder begleitet die Lehrkraft?
-
-1. Die Lehrkraft schaut sich die Begleitansicht gemeinsam mit den Lernenden an.
-2. Dort sieht sie auf einen Blick:
-   Regelmäßigkeit, Wochenminuten, letzte Übe-Einträge und freigeschaltete Kärtchen.
-3. Die Lehrkraft erkennt dadurch:
-   ob regelmäßig geübt wurde, welche Schwerpunkte gesetzt wurden und ob Lernende ihr Üben reflektieren.
-4. Im Unterricht kann sie daran anknüpfen:
-   Was lief gut? Wo gab es Schwierigkeiten? Welcher Bereich braucht als Nächstes Hilfe?
-5. Berichtspakete können in die eigene Lehrkraft-App importiert und dort automatisch zusammengeführt werden.
-6. Bei Bedarf kann die Zusammenfassung weitergegeben oder gemeinsam besprochen werden.
+- Für die tägliche Zusammenarbeit ist der Server-Sync der Hauptweg.
+- Manuelle Berichtspakete sind nur noch ein Fallback.
+- Die Lehrkräfte-App bekommt ihre Sicht primär über die WordPress-Zentrale.
 
 ## Ziel im Unterricht
 
@@ -230,112 +265,26 @@ FleißTakt kann schrittweise wachsen, ohne den einfachen Kern der App zu verlier
 
 - Einträge bearbeiten und löschen
 - Kalenderansicht zusätzlich zur Listenansicht
-- mehrere Instrumente pro Profil
-- feinere Übe-Bereiche, zum Beispiel Technik, Stück A, Stück B oder Improvisation
 - bessere Routine-Logik für Ferien, Pausentage oder Unterrichtsausfälle
+- stabiler Sync zwischen Lernenden-App, Lehrkräfte-App und WordPress
 
 ### Stufe 2: Mehr Motivation
 
-- weitere Fleiß-Kärtchen mit kleinen Themenwelten
+- weitere Kärtchen-Ziele mit kleinen Themenwelten
 - Sammelalbum mit Reihen, Seltenheit und sichtbarem Fortschritt
 - kleine Feiermomente beim Freischalten
 - Wochenziele und Monatsziele
-- freundliche Erinnerungen statt nüchterner Hinweise
 
 ### Stufe 3: Mehr Begleitung durch Lehrkräfte
 
 - kommentierbare Rückblicke zu Woche oder Monat
 - Fokus-Themen für die nächste Übephase
-- Zielvereinbarungen zwischen Lernenden und Lehrkraft
+- Zielvereinbarungen zwischen Lernenden und Lehrkräften
 - kurze Notizen für die nächste Unterrichtsstunde
-- Berichte mit noch klarerer pädagogischer Sprache
 
-### Stufe 4: Alltag über mehrere Geräte hinweg
+### Stufe 4: Mehr Vernetzung
 
-- mehrere Profile auf einem Gerät
-- noch geführtere Backup- und Wiederherstellungsabläufe
-- Export für Gespräche, Elternabende oder Dokumentation
-- optional geschützter Begleitbereich
-- saubere Nutzung auf Handy und Tablet
-
-### Stufe 5: Vernetzte Version
-
-- Login und Cloud-Sicherung
-- Freigaben für Eltern oder Lehrkraft
-- gemeinsame Wochenpläne oder Aufgaben
-- Auswahl, welche Berichte geteilt werden
-- Nutzung über mehrere Geräte hinweg ohne manuelle Sicherung
-
-### Empfohlene nächste Schritte
-
-1. Einträge bearbeiten und löschen sowie eine Kalenderansicht ergänzen.
-2. Das Sammelalbum und die Kärtchen-Motivation sichtbar ausbauen.
-3. Die Begleitung durch Lehrkräfte mit Zielen und Rückblicken vertiefen.
-
-## Fördermöglichkeit und sachliche Einordnung
-
-FleißTakt kann auch als entwicklungsfähiges Vorhaben für Musikschule, Fachbereich oder Schulleitung beschrieben werden.
-
-### Mögliche Stellen für Unterstützung
-
-- Musikschulen oder deren Fördervereine
-- kommunale Kultur- oder Bildungsförderung
-- Stiftungen mit Bezug zu Bildung, Kultur oder Teilhabe
-- Programme zur digitalen Unterrichtsentwicklung
-- Träger aus Musikpädagogik und Jugendbildung
-
-### Sachlicher Text für Schulleitung oder Musikschule
-
-FleißTakt ist als niedrigschwellige digitale Begleitung für den Musikunterricht gedacht. Die App unterstützt Lernende dabei, ihr häusliches Üben einfach zu dokumentieren, Fortschritte sichtbar zu machen und regelmäßige Übegewohnheiten aufzubauen. Gleichzeitig erhalten Lehrkräfte eine ruhige, pädagogisch anschlussfähige Übersicht über Regelmäßigkeit, Schwerpunkte und Entwicklung.
-
-Aus Sicht einer Musikschule oder Schulleitung ist FleißTakt vor allem dort interessant, wo Üben nicht nur kontrolliert, sondern als Teil eines motivierenden Lernprozesses begleitet werden soll. Die Anwendung verbindet Eigenverantwortung der Lernenden mit einer klaren Gesprächsgrundlage für den Unterricht und kann so zur Stärkung von Übekultur, Reflexion und Verbindlichkeit beitragen.
-
-Wenn das Projekt weiterentwickelt wird, lässt es sich auch als Baustein für digitale Unterrichtsentwicklung, musikalische Bildung und zeitgemäße Lernbegleitung darstellen.
-
-## Projektstand
-
-Aktuell enthält der Prototyp:
-
-- Startansicht für den Tag
-- Eintragen von Übezeit und Schwerpunkt
-- Verlauf der letzten Einträge
-- Fleiß-Kärtchen mit Freischaltlogik
-- Profilbereich
-- Begleitansicht für Eltern oder Lehrkraft
-- Berichte für Woche, Monat und Gesamt
-- Bericht teilen, kopieren, herunterladen oder drucken
-- FleißTakt-Berichtspaket mit Prüfsumme und Lernenden-ID
-- eigene Lehrkraft-App mit Import, Merge, Klassen und Lehrkraft-Backup
-
-## Versionsschema
-
-Für FleißTakt gilt ein einfaches, praktisches Versionsschema:
-
-- `0.2.x` für Feinschliff, Textkorrekturen, Layout-Anpassungen und kleine Fehlerbehebungen
-- `0.3.0` für neue Funktionsblöcke, zum Beispiel neue Einstellungen, Berichtsfunktionen oder Weiterempfehlen
-- `0.4.0` und folgende für größere Ausbaustufen wie Kalenderansicht, Bearbeiten von Einträgen oder mehrere Instrumente
-- `1.0.0` für eine erste rund wirkende, öffentlich vorzeigbare Kernversion
-
-Praktische Regel:
-
-- Patch-Versionen wie `0.2.1` für kleine Korrekturen
-- Minor-Versionen wie `0.3.0` für neue Funktionen
-- Major-Versionen wie `1.0.0` für einen deutlichen Reifegrad-Sprung
-
-## Lokal starten
-
-```powershell
-.\start-server.ps1
-```
-
-Danach ist die App im Browser erreichbar, zum Beispiel unter:
-
-```text
-http://localhost:5000/
-```
-
-Die Lehrkraft-App liegt zusätzlich unter:
-
-```text
-http://localhost:5000/teacher.html
-```
+- mehrere Geräte pro Profil
+- feinere Rechte und Rollen
+- weitere Mandanten- und Organisationslogik für Musikschulen
+- stärkere Einbindung von WordPress als zentrale Unterrichtsplattform

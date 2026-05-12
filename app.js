@@ -1,5 +1,6 @@
 const STORAGE_KEY = "fleisstakt-state-v1";
 const APP_SHARE_URL = "https://marsrakete.github.io/fleisstakt/";
+const DEFAULT_SYNC_BASE_URL = "https://schwoabamunzee.marsrakete.de/wp-json/fleisstakt-sync/v1";
 const CURRENT_VERSION_INFO = Object.freeze(globalThis.APP_VERSION_INFO || {
   appVersion: "0.0.0",
   cacheVersion: "v0",
@@ -15,15 +16,35 @@ const navItems = [
 ];
 
 const instruments = ["Klavier", "Violine", "Gitarre", "Cello"];
-const categories = ["Technik", "Stück", "Tonleiter", "Freies Spiel"];
-const cardDefinitions = [
+const defaultPracticeCategories = ["Technik", "Stück", "Tonleiter", "Freies Spiel"];
+const cardRuleTypes = [
+  "none",
+  "streakAtLeast",
+  "dayMinutesAtLeast",
+  "weekMinutesAtLeast",
+  "monthMinutesAtLeast",
+  "notedEntriesAtLeast",
+  "categoryUsed",
+  "categoriesCountAtLeast",
+  "morningEntryOnce",
+  "entriesCountAtLeast",
+  "weekEntriesAtLeast",
+  "daysPracticedAtLeast",
+];
+const accentFallbacks = ["apricot", "gold", "sky", "mint"];
+const standardCardDefinitions = [
   {
     id: "warm-gespielt",
     title: "Warm gespielt",
     description: "3 Tage in Folge geübt",
     accent: "apricot",
-    isUnlocked(stats) {
-      return stats.streak >= 3;
+    symbol: "♬",
+    rarity: "Bronze",
+    source: "core",
+    status: "active",
+    rule: {
+      type: "streakAtLeast",
+      value: 3,
     },
   },
   {
@@ -31,8 +52,13 @@ const cardDefinitions = [
     title: "Taktsicher",
     description: "60 Minuten in einer Woche",
     accent: "gold",
-    isUnlocked(stats) {
-      return stats.weekMinutes >= 60;
+    symbol: "✦",
+    rarity: "Gold",
+    source: "core",
+    status: "active",
+    rule: {
+      type: "weekMinutesAtLeast",
+      value: 60,
     },
   },
   {
@@ -40,8 +66,13 @@ const cardDefinitions = [
     title: "Morgenklang",
     description: "Vor 8 Uhr geübt",
     accent: "sky",
-    isUnlocked(stats) {
-      return stats.hasMorningEntry;
+    symbol: "☀",
+    rarity: "Silber",
+    source: "core",
+    status: "active",
+    rule: {
+      type: "morningEntryOnce",
+      value: 1,
     },
   },
   {
@@ -49,8 +80,13 @@ const cardDefinitions = [
     title: "Bühnenmut",
     description: "7 Einträge mit Notiz",
     accent: "mint",
-    isUnlocked(stats) {
-      return stats.notedEntryCount >= 7;
+    symbol: "✺",
+    rarity: "Spezial",
+    source: "core",
+    status: "active",
+    rule: {
+      type: "notedEntriesAtLeast",
+      value: 7,
     },
   },
 ];
@@ -85,13 +121,28 @@ const state = {
   activeScreen: "today",
   minutes: 20,
   instrument: instruments[0],
-  category: categories[0],
+  category: defaultPracticeCategories[0],
   note: "",
   celebrate: false,
   celebrationText: "Neues Kärtchen vorbereitet. Weiter so!",
   profileName: "Mila",
   studentId: "",
+  studentUuid: "",
+  profileUuid: "",
+  classId: "",
+  profileLibrary: [],
+  activeProfileId: "",
   entries: [],
+  customCards: [],
+  practiceCategories: [...defaultPracticeCategories],
+  syncBaseUrl: DEFAULT_SYNC_BASE_URL,
+  syncUploadToken: "",
+  syncSiteLabel: "",
+  syncStatusNote: "",
+  activeFeedbackRound: null,
+  feedbackAnswers: {},
+  feedbackStatus: "idle",
+  feedbackError: "",
   profilePanel: "profil",
   goal: 15,
   installPrompt: null,
@@ -101,26 +152,36 @@ const state = {
   settingsOpen: false,
   settingsFocusId: "",
   helpOpen: false,
-  updateStatus: "Noch nicht geprüft.",
+  profileImportConfirmOpen: false,
+  resetConfirmOpen: false,
+  resetFinalConfirmOpen: false,
+  pendingProfileImport: null,
+  connectStudentIdDraft: "",
+  connectCodeDraft: "",
+  scannerOpen: false,
+  scannerMessage: "",
+  scannerState: "idle",
+  syncStatusOpen: false,
+  syncStatusTitle: "",
+  syncStatusMessage: "",
+  syncStatusState: "idle",
+  syncStatusSteps: [],
+  updateStatus: "Die App funktioniert auch offline. Für eine Update-Prüfung bitte kurz online gehen.",
   updateState: "idle",
   updateReady: false,
   versionInfo: CURRENT_VERSION_INFO,
 };
 let serviceWorkerRegistration = null;
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./sw.js")
-      .then((registration) => {
-        serviceWorkerRegistration = registration;
-        watchServiceWorker(registration);
-      })
-      .catch(() => {
-        state.updateStatus = "Update-Prüfung auf diesem Gerät nicht verfügbar.";
-      });
-  });
-}
+let updateInProgress = false;
+let reloadInProgress = false;
+let controllerReloadHandled = false;
+let qrScannerStream = null;
+let qrScannerFrameHandle = 0;
+let qrScanAbort = false;
+let scannerRetryHandle = 0;
+let activeSyncAutoCloseHandle = 0;
+let studentSyncInProgress = false;
+let studentAutoSyncPending = false;
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -144,12 +205,135 @@ window.addEventListener("appinstalled", () => {
 const root = document.querySelector("#root");
 hydrateState();
 applyModalScrollLock();
+applyReloadStatusFromUrl();
+applyConnectionFromUrl();
+registerServiceWorker();
 
 function applyModalScrollLock() {
-  const isLocked = state.settingsOpen || state.helpOpen;
+  const isLocked = state.settingsOpen
+    || state.helpOpen
+    || state.profileImportConfirmOpen
+    || state.resetConfirmOpen
+    || state.resetFinalConfirmOpen
+    || state.scannerOpen
+    || state.syncStatusOpen;
   document.documentElement.style.overflow = isLocked ? "hidden" : "";
   document.body.style.overflow = isLocked ? "hidden" : "";
   document.body.classList.toggle("is-modal-open", isLocked);
+}
+
+function scannerSupported() {
+  return typeof window !== "undefined"
+    && "BarcodeDetector" in window
+    && Boolean(navigator.mediaDevices?.getUserMedia);
+}
+
+function connectionScannerText() {
+  if (state.scannerState === "error" && state.scannerMessage) {
+    return state.scannerMessage;
+  }
+  if (state.scannerState === "active") {
+    return state.scannerMessage || "Halte den QR-Code ruhig in die Kamera.";
+  }
+  return state.scannerMessage || "Der QR-Code aus der Lehrkräfte-App kann direkt mit der Kamera oder über ein Bild erkannt werden.";
+}
+
+function openSyncStatus(title, steps) {
+  window.clearTimeout(activeSyncAutoCloseHandle);
+  state.syncStatusOpen = true;
+  state.syncStatusTitle = title;
+  state.syncStatusMessage = "Bitte kurz warten...";
+  state.syncStatusState = "running";
+  state.syncStatusSteps = steps.map((step) => ({
+    id: step.id,
+    label: step.label,
+    state: "pending",
+  }));
+  applyModalScrollLock();
+  render();
+}
+
+function updateSyncStatus(stepId, nextState, message = "") {
+  state.syncStatusSteps = state.syncStatusSteps.map((step) =>
+    step.id === stepId ? { ...step, state: nextState } : step,
+  );
+  if (message) {
+    state.syncStatusMessage = message;
+  }
+  render();
+}
+
+function finishSyncStatus(nextState, message, autoClose = false) {
+  window.clearTimeout(activeSyncAutoCloseHandle);
+  state.syncStatusState = nextState;
+  state.syncStatusMessage = message;
+  render();
+  if (autoClose) {
+    activeSyncAutoCloseHandle = window.setTimeout(() => {
+      closeSyncStatusDialog();
+    }, 1200);
+  }
+}
+
+function closeSyncStatusDialog() {
+  window.clearTimeout(activeSyncAutoCloseHandle);
+  state.syncStatusOpen = false;
+  state.syncStatusTitle = "";
+  state.syncStatusMessage = "";
+  state.syncStatusState = "idle";
+  state.syncStatusSteps = [];
+  applyModalScrollLock();
+  render();
+}
+
+function normalizeVersionInfo(value = {}) {
+  return {
+    appVersion: String(value.appVersion || "").trim(),
+    cacheVersion: String(value.cacheVersion || "").trim(),
+    label: String(value.label || "").trim(),
+  };
+}
+
+function versionSignature(value = {}) {
+  const normalized = normalizeVersionInfo(value);
+  return `${normalized.appVersion}|${normalized.cacheVersion}`;
+}
+
+function setUpdateStatus(message, options = {}) {
+  const { showReload = false, error = false, stateName = "" } = options;
+  state.updateReady = Boolean(showReload);
+  state.updateStatus = message;
+  state.updateState = stateName || (showReload ? "ready" : error ? "error" : message ? "ok" : "idle");
+  render();
+}
+
+function applyReloadStatusFromUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("reload")) {
+    return;
+  }
+
+  state.updateReady = false;
+  state.updateState = "ok";
+  state.updateStatus = "App wurde neu geladen. Die aktuelle Version ist jetzt aktiv.";
+  url.searchParams.delete("reload");
+  window.history.replaceState({}, "", url.toString());
+}
+
+async function fetchVersionInfo() {
+  const response = await fetch(`./version.js?ts=${Date.now()}`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("version-nicht-verfuegbar");
+  }
+
+  const source = await response.text();
+  const appVersion = source.match(/appVersion:\s*"([^"]+)"/)?.[1] || "";
+  const cacheVersion = source.match(/cacheVersion:\s*"([^"]+)"/)?.[1] || "";
+  const label = source.match(/label:\s*"([^"]*)"/)?.[1] || "";
+  return normalizeVersionInfo({ appVersion, cacheVersion, label });
 }
 
 function watchServiceWorker(registration) {
@@ -159,7 +343,7 @@ function watchServiceWorker(registration) {
 
   registration.addEventListener("updatefound", () => {
     state.updateState = "checking";
-    state.updateStatus = "Neue Version wird geprüft...";
+    state.updateStatus = "Neue Version wird vorbereitet...";
     const worker = registration.installing;
     if (!worker) {
       render();
@@ -172,7 +356,7 @@ function watchServiceWorker(registration) {
           markUpdateReady();
         } else {
           state.updateState = "ok";
-          state.updateStatus = "App ist auf dem aktuellen Stand.";
+          state.updateStatus = "App ist bereit und funktioniert auch offline.";
           render();
         }
       }
@@ -186,6 +370,139 @@ function markUpdateReady() {
   state.updateState = "ready";
   state.updateStatus = "Update bereit. App bitte neu laden.";
   render();
+}
+
+async function performAppReload() {
+  if (reloadInProgress) {
+    return;
+  }
+
+  reloadInProgress = true;
+  setUpdateStatus("Update wird angewendet...", { showReload: true, stateName: "ready" });
+
+  try {
+    await serviceWorkerRegistration?.update().catch(() => {});
+    serviceWorkerRegistration?.waiting?.postMessage?.({ type: "SKIP_WAITING" });
+  } catch {
+    // fallback reload below
+  }
+
+  window.setTimeout(() => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("reload", String(Date.now()));
+    window.location.replace(nextUrl.toString());
+  }, 140);
+}
+
+async function checkForUpdates(options = {}) {
+  const {
+    showChecking = true,
+    silentNoChange = false,
+    silentError = false,
+  } = options;
+
+  if (updateInProgress) {
+    return;
+  }
+
+  if (!serviceWorkerRegistration) {
+    if (!silentError) {
+      setUpdateStatus("Update-Prüfung auf diesem Gerät nicht verfügbar.", { error: true });
+    }
+    return;
+  }
+
+  if (!navigator.onLine) {
+    if (!silentError) {
+      setUpdateStatus("Du musst bitte eine Internet-Verbindung aufbauen, um ein Update zu starten.", {
+        error: true,
+      });
+    }
+    return;
+  }
+
+  updateInProgress = true;
+  if (showChecking) {
+    state.updateState = "checking";
+    state.updateStatus = "Suche nach Updates...";
+    render();
+  }
+
+  try {
+    await serviceWorkerRegistration.update();
+    const remoteVersion = await fetchVersionInfo();
+
+    if (!remoteVersion.appVersion || !remoteVersion.cacheVersion) {
+      if (!silentError) {
+        setUpdateStatus("Versionsinformationen sind unvollständig. Bitte später erneut versuchen.", {
+          error: true,
+        });
+      }
+      return;
+    }
+
+    if (versionSignature(remoteVersion) === versionSignature(CURRENT_VERSION_INFO)) {
+      if (!silentNoChange) {
+        setUpdateStatus("Die App ist auf dem aktuellen Stand.", { stateName: "ok" });
+      }
+      return;
+    }
+
+    const remoteLabel = remoteVersion.label ? ` · ${remoteVersion.label}` : "";
+    setUpdateStatus(
+      `Neue Version gefunden: ${remoteVersion.appVersion} · ${remoteVersion.cacheVersion}${remoteLabel}. Bitte jetzt neu laden.`,
+      { showReload: true, stateName: "ready" },
+    );
+  } catch {
+    if (!silentError) {
+      setUpdateStatus(
+        "Update-Prüfung gerade nicht möglich. Bitte verbinde das Gerät kurz mit dem Internet und versuche es dann erneut.",
+        { error: true },
+      );
+    }
+  } finally {
+    updateInProgress = false;
+  }
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    state.updateStatus = "Update-Prüfung auf diesem Gerät nicht verfügbar.";
+    state.updateState = "error";
+    return;
+  }
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (controllerReloadHandled) {
+      return;
+    }
+
+    controllerReloadHandled = true;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("reload", String(Date.now()));
+    window.location.replace(nextUrl.toString());
+  });
+
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("./sw.js");
+      serviceWorkerRegistration = registration;
+      watchServiceWorker(registration);
+      await navigator.serviceWorker.ready.catch(() => registration);
+
+      if (navigator.onLine) {
+        void checkForUpdates({
+          showChecking: false,
+          silentNoChange: true,
+          silentError: true,
+        });
+      }
+    } catch {
+      state.updateStatus = "Update-Prüfung auf diesem Gerät nicht verfügbar.";
+      state.updateState = "error";
+      render();
+    }
+  });
 }
 
 function escapeHtml(text) {
@@ -229,29 +546,273 @@ function createStudentId() {
   return `ft-${stamp}-${random}`;
 }
 
+function normalizePracticeCategories(list) {
+  const values = Array.isArray(list)
+    ? list
+    : `${list || ""}`.split(/\r?\n|,/).map((item) => item.trim());
+
+  const unique = [...new Set(values.map((item) => `${item || ""}`.trim()).filter(Boolean))];
+  return unique.length ? unique.slice(0, 12) : [...defaultPracticeCategories];
+}
+
+function getPracticeCategories() {
+  const categories = normalizePracticeCategories(state.practiceCategories);
+  if (state.category && !categories.includes(state.category)) {
+    return [...categories, state.category];
+  }
+  return categories;
+}
+
+function normalizeCardRule(rule) {
+  const nextType = cardRuleTypes.includes(rule?.type) ? rule.type : "entriesCountAtLeast";
+  const nextValue = nextType === "none"
+    ? 0
+    : nextType === "morningEntryOnce"
+      ? 1
+      : Math.max(1, Number(rule?.value) || 1);
+  const category = nextType === "categoryUsed"
+    ? `${rule?.category || defaultPracticeCategories[0] || ""}`.trim()
+    : "";
+  return {
+    type: nextType,
+    value: nextValue,
+    category,
+  };
+}
+
+function normalizeCardDefinition(card, source = "teacher") {
+  const rule = normalizeCardRule(card?.rule);
+  const assignment = {
+    type: ["all", "class", "student"].includes(card?.assignment?.type) ? card.assignment.type : "all",
+    targetId: `${card?.assignment?.targetId || ""}`.trim(),
+  };
+  const award = card?.award && card.award.mode === "manual"
+    ? {
+        mode: "manual",
+        awardId: Number(card.award.awardId) || 0,
+        note: `${card.award.note || ""}`.trim(),
+        awardedAt: `${card.award.awardedAt || ""}`.trim(),
+        awardedBy: `${card.award.awardedBy || ""}`.trim(),
+      }
+    : null;
+  return {
+    id: `${card?.id || createStudentId()}`,
+    title: `${card?.title || "Neues Kärtchen"}`.trim() || "Neues Kärtchen",
+    description: `${card?.description || describeRule(rule)}`.trim() || describeRule(rule),
+    accent: accentFallbacks.includes(card?.accent) ? card.accent : accentFallbacks[0],
+    symbol: `${card?.symbol || "♪"}`.trim().slice(0, 2) || "♪",
+    rarity: `${card?.rarity || "Basis"}`.trim() || "Basis",
+    source: source === "core" ? "core" : "teacher",
+    status: card?.status === "inactive" ? "inactive" : "active",
+    assignment,
+    rule,
+    award,
+  };
+}
+
+function normalizeSyncBaseUrl(value) {
+  const normalized = `${value || ""}`.trim();
+  return normalized.replace(/\/+$/, "") || DEFAULT_SYNC_BASE_URL;
+}
+
+function normalizeFeedbackRound(round) {
+  if (!round || !Array.isArray(round.questions) || !round.questions.length) {
+    return null;
+  }
+
+  const questions = round.questions
+    .filter((question) => question?.id && question?.label)
+    .map((question) => ({
+      id: Number(question.id) || 0,
+      key: `${question.key || ""}`.trim(),
+      label: `${question.label || ""}`.trim(),
+      type: question.type === "scale5" ? "scale5" : "scale5",
+      required: question.required !== false,
+    }))
+    .filter((question) => question.id && question.label);
+
+  if (!questions.length) {
+    return null;
+  }
+
+  return {
+    roundId: Number(round.roundId) || 0,
+    title: `${round.title || "Rückmeldung zum Unterricht"}`.trim(),
+    introText: `${round.introText || "Deine Antworten sind anonym."}`.trim(),
+    alreadyAnswered: Boolean(round.alreadyAnswered),
+    ballotToken: `${round.ballotToken || ""}`.trim(),
+    questions,
+  };
+}
+
+function getProfileStorageId(profile = {}) {
+  return `${profile.storageId || profile.profileUuid || profile.studentId || createStudentId()}`.trim();
+}
+
+function normalizeStoredProfile(profile = {}) {
+  return {
+    storageId: getProfileStorageId(profile),
+    profileName: profile.profileName || profile.displayName || "Mila",
+    profileLabel: profile.profileLabel || profile.instrument || "Profil",
+    instrument: profile.instrument || instruments[0],
+    goal: Number(profile.goal) || 15,
+    studentId: profile.studentId || profile.appStudentId || createStudentId(),
+    studentUuid: profile.studentUuid || "",
+    profileUuid: profile.profileUuid || "",
+    classId: profile.classId || "",
+    entries: Array.isArray(profile.entries) ? profile.entries : [],
+    customCards: Array.isArray(profile.customCards)
+      ? profile.customCards.map((card) => normalizeCardDefinition(card, "teacher"))
+      : [],
+    practiceCategories: normalizePracticeCategories(profile.practiceCategories || defaultPracticeCategories),
+    syncBaseUrl: normalizeSyncBaseUrl(profile.syncBaseUrl || DEFAULT_SYNC_BASE_URL),
+    syncUploadToken: profile.syncUploadToken || profile.uploadToken || "",
+    syncSiteLabel: profile.syncSiteLabel || profile.siteLabel || "",
+    syncStatusNote: profile.syncStatusNote || "",
+    activeFeedbackRound: normalizeFeedbackRound(profile.activeFeedbackRound),
+    feedbackAnswers: profile.feedbackAnswers && typeof profile.feedbackAnswers === "object" ? profile.feedbackAnswers : {},
+    feedbackStatus: ["idle", "ready", "answered", "sending", "success", "error"].includes(profile.feedbackStatus) ? profile.feedbackStatus : "idle",
+    feedbackError: profile.feedbackError || "",
+  };
+}
+
+function currentProfileSnapshot(overrides = {}) {
+  return normalizeStoredProfile({
+    storageId: state.activeProfileId || state.profileUuid || state.studentId,
+    profileName: state.profileName,
+    profileLabel: overrides.profileLabel || state.instrument || "Profil",
+    instrument: state.instrument,
+    goal: state.goal,
+    studentId: state.studentId,
+    studentUuid: state.studentUuid,
+    profileUuid: state.profileUuid,
+    classId: state.classId,
+    entries: state.entries,
+    customCards: state.customCards,
+    practiceCategories: state.practiceCategories,
+    syncBaseUrl: state.syncBaseUrl,
+    syncUploadToken: state.syncUploadToken,
+    syncSiteLabel: state.syncSiteLabel,
+    syncStatusNote: state.syncStatusNote,
+    activeFeedbackRound: state.activeFeedbackRound,
+    feedbackAnswers: state.feedbackAnswers,
+    feedbackStatus: state.feedbackStatus,
+    feedbackError: state.feedbackError,
+    ...overrides,
+  });
+}
+
+function syncCurrentStateIntoProfileLibrary() {
+  const snapshot = currentProfileSnapshot();
+  if (!snapshot.studentId && !snapshot.profileUuid && !snapshot.syncUploadToken) {
+    return;
+  }
+
+  const nextId = snapshot.storageId;
+  const nextLibrary = [...state.profileLibrary];
+  const index = nextLibrary.findIndex((profile) => profile.storageId === nextId);
+  if (index >= 0) {
+    nextLibrary[index] = snapshot;
+  } else {
+    nextLibrary.push(snapshot);
+  }
+
+  state.profileLibrary = nextLibrary.sort((a, b) => {
+    const left = `${a.profileName} ${a.profileLabel}`.trim();
+    const right = `${b.profileName} ${b.profileLabel}`.trim();
+    return left.localeCompare(right, "de");
+  });
+  state.activeProfileId = nextId;
+}
+
+function applyStoredProfile(profile) {
+  const normalized = normalizeStoredProfile(profile);
+  state.activeProfileId = normalized.storageId;
+  state.profileName = normalized.profileName;
+  state.instrument = normalized.instrument;
+  state.goal = normalized.goal;
+  state.studentId = normalized.studentId;
+  state.studentUuid = normalized.studentUuid;
+  state.profileUuid = normalized.profileUuid;
+  state.classId = normalized.classId;
+  state.entries = [...normalized.entries];
+  state.customCards = normalized.customCards.map((card) => normalizeCardDefinition(card, "teacher"));
+  state.practiceCategories = normalized.practiceCategories;
+  state.syncBaseUrl = normalized.syncBaseUrl;
+  state.syncUploadToken = normalized.syncUploadToken;
+  state.syncSiteLabel = normalized.syncSiteLabel;
+  state.syncStatusNote = normalized.syncStatusNote;
+  state.activeFeedbackRound = normalized.activeFeedbackRound;
+  state.feedbackAnswers = normalized.feedbackAnswers;
+  state.feedbackStatus = normalized.feedbackStatus;
+  state.feedbackError = normalized.feedbackError;
+}
+
+function activateStoredProfile(profileId) {
+  syncCurrentStateIntoProfileLibrary();
+  const nextProfile = state.profileLibrary.find((profile) => profile.storageId === profileId);
+  if (!nextProfile) {
+    return;
+  }
+
+  applyStoredProfile(nextProfile);
+  persistState();
+}
+
+function profileSwitcherOptions() {
+  syncCurrentStateIntoProfileLibrary();
+  return state.profileLibrary;
+}
+
 function hydrateState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       state.entries = [...defaultEntries];
       state.studentId = createStudentId();
+      state.activeProfileId = state.studentId;
+      syncCurrentStateIntoProfileLibrary();
       persistState();
       return;
     }
 
     const parsed = JSON.parse(raw);
-    state.entries = Array.isArray(parsed.entries) ? parsed.entries : [...defaultEntries];
-    state.instrument = parsed.instrument || instruments[0];
-    state.profileName = parsed.profileName || "Mila";
-    state.studentId = parsed.studentId || createStudentId();
-    state.goal = Number(parsed.goal) || 15;
+    const legacyProfile = normalizeStoredProfile({
+      profileName: parsed.profileName || "Mila",
+      instrument: parsed.instrument || instruments[0],
+      goal: Number(parsed.goal) || 15,
+      studentId: parsed.studentId || createStudentId(),
+      studentUuid: parsed.studentUuid || "",
+      profileUuid: parsed.profileUuid || "",
+      classId: parsed.classId || "",
+      entries: Array.isArray(parsed.entries) ? parsed.entries : [...defaultEntries],
+      customCards: Array.isArray(parsed.customCards) ? parsed.customCards : [],
+      syncBaseUrl: parsed.syncBaseUrl || DEFAULT_SYNC_BASE_URL,
+      syncUploadToken: parsed.syncUploadToken || "",
+      syncSiteLabel: parsed.syncSiteLabel || "",
+      syncStatusNote: parsed.syncStatusNote || "",
+      practiceCategories: normalizePracticeCategories(parsed.practiceCategories || defaultPracticeCategories),
+    });
+    state.profileLibrary = Array.isArray(parsed.profileLibrary) && parsed.profileLibrary.length
+      ? parsed.profileLibrary.map(normalizeStoredProfile)
+      : [legacyProfile];
+    state.activeProfileId = parsed.activeProfileId || legacyProfile.storageId;
+    applyStoredProfile(
+      state.profileLibrary.find((profile) => profile.storageId === state.activeProfileId)
+      || state.profileLibrary[0]
+      || legacyProfile,
+    );
   } catch {
     state.entries = [...defaultEntries];
     state.studentId = createStudentId();
+    state.customCards = [];
+    state.activeProfileId = state.studentId;
+    state.profileLibrary = [currentProfileSnapshot()];
   }
 }
 
 function persistState() {
+  syncCurrentStateIntoProfileLibrary();
   window.localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
@@ -259,12 +820,24 @@ function persistState() {
       instrument: state.instrument,
       profileName: state.profileName,
       studentId: state.studentId,
+      studentUuid: state.studentUuid,
+      profileUuid: state.profileUuid,
+      classId: state.classId,
       goal: state.goal,
+      practiceCategories: state.practiceCategories,
+      syncBaseUrl: state.syncBaseUrl,
+      syncUploadToken: state.syncUploadToken,
+      syncSiteLabel: state.syncSiteLabel,
+      syncStatusNote: state.syncStatusNote,
+      customCards: state.customCards,
+      profileLibrary: state.profileLibrary,
+      activeProfileId: state.activeProfileId,
     }),
   );
 }
 
 function exportBackupPayload() {
+  syncCurrentStateIntoProfileLibrary();
   const payload = {
     exportedAt: new Date().toISOString(),
     app: "FleißTakt",
@@ -274,8 +847,19 @@ function exportBackupPayload() {
       instrument: state.instrument,
       profileName: state.profileName,
       studentId: state.studentId,
+      studentUuid: state.studentUuid,
+      profileUuid: state.profileUuid,
+      classId: state.classId,
       goal: state.goal,
       reportRange: state.reportRange,
+      practiceCategories: state.practiceCategories,
+      syncBaseUrl: state.syncBaseUrl,
+      syncUploadToken: state.syncUploadToken,
+      syncSiteLabel: state.syncSiteLabel,
+      syncStatusNote: state.syncStatusNote,
+      customCards: state.customCards,
+      profileLibrary: state.profileLibrary,
+      activeProfileId: state.activeProfileId,
     },
   };
 
@@ -283,6 +867,34 @@ function exportBackupPayload() {
     ...payload,
     checksum: createBackupChecksum(payload),
   };
+}
+
+function createBackupFileName() {
+  return `fleisstakt-backup-${createDateStamp()}.json`;
+}
+
+function createBackupFileContent() {
+  return JSON.stringify(exportBackupPayload(), null, 2);
+}
+
+async function shareDeviceMoveBackup() {
+  const filename = createBackupFileName();
+  const content = createBackupFileContent();
+  const file = new File([content], filename, { type: "application/json" });
+
+  if (!navigator.share) {
+    throw new Error("teilen-nicht-verfuegbar");
+  }
+
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+    throw new Error("datei-teilen-nicht-verfuegbar");
+  }
+
+  await navigator.share({
+    title: "FleißTakt Gerätewechsel",
+    text: "Diese Datei auf dem neuen Gerät in FleißTakt importieren, damit Lernenden-ID und Verlauf erhalten bleiben.",
+    files: [file],
+  });
 }
 
 async function importBackupFile(file) {
@@ -305,17 +917,692 @@ async function importBackupFile(file) {
   state.instrument = backup.instrument || instruments[0];
   state.profileName = backup.profileName || "Mila";
   state.studentId = backup.studentId || state.studentId || createStudentId();
+  state.studentUuid = backup.studentUuid || "";
+  state.profileUuid = backup.profileUuid || "";
+  state.classId = backup.classId || "";
   state.goal = Number(backup.goal) || 15;
   state.reportRange = backup.reportRange || "week";
+  state.profileLibrary = Array.isArray(backup.profileLibrary) && backup.profileLibrary.length
+    ? backup.profileLibrary.map(normalizeStoredProfile)
+    : [normalizeStoredProfile({
+        profileName: backup.profileName || "Mila",
+      instrument: backup.instrument || instruments[0],
+      goal: Number(backup.goal) || 15,
+        studentId: backup.studentId || state.studentId || createStudentId(),
+        studentUuid: backup.studentUuid || "",
+        profileUuid: backup.profileUuid || "",
+        classId: backup.classId || "",
+        entries: backup.entries,
+        customCards: backup.customCards,
+      syncBaseUrl: backup.syncBaseUrl || DEFAULT_SYNC_BASE_URL,
+      syncUploadToken: backup.syncUploadToken || "",
+      syncSiteLabel: backup.syncSiteLabel || "",
+      syncStatusNote: backup.syncStatusNote || "",
+      practiceCategories: normalizePracticeCategories(backup.practiceCategories || defaultPracticeCategories),
+      })];
+  state.activeProfileId = backup.activeProfileId || state.profileLibrary[0]?.storageId || "";
+  applyStoredProfile(
+    state.profileLibrary.find((profile) => profile.storageId === state.activeProfileId)
+    || state.profileLibrary[0],
+  );
   persistState();
+}
+
+function parseCardPackage(text) {
+  const parsed = JSON.parse(text);
+  const checksum = parsed?.checksum;
+  const payload = parsed?.kind
+    ? {
+        kind: parsed.kind,
+        exportedAt: parsed.exportedAt,
+        appVersion: parsed.appVersion,
+        targetStudentIds: parsed.targetStudentIds,
+        cards: parsed.cards,
+      }
+    : null;
+
+  if (!payload || payload.kind !== "fleisstakt-kartenpaket") {
+    throw new Error("ungueltiges-kartenpaket");
+  }
+
+  if (!checksum || createBackupChecksum(payload) !== checksum) {
+    throw new Error("ungueltige-pruefsumme");
+  }
+
+  if (!Array.isArray(payload.cards)) {
+    throw new Error("ungueltiges-kartenpaket");
+  }
+
+  if (
+    Array.isArray(payload.targetStudentIds) &&
+    payload.targetStudentIds.length &&
+    !payload.targetStudentIds.includes(state.studentId)
+  ) {
+    throw new Error("falsche-lernenden-id");
+  }
+
+  return payload;
+}
+
+async function importCardPackage(file) {
+  const payload = parseCardPackage(await file.text());
+  const cardMap = new Map(state.customCards.map((card) => [card.id, card]));
+
+  payload.cards.forEach((card) => {
+    const normalized = normalizeCardDefinition(card, "teacher");
+    cardMap.set(normalized.id, normalized);
+  });
+
+  state.customCards = [...cardMap.values()].sort((a, b) => a.title.localeCompare(b.title, "de"));
+  persistState();
+}
+
+function parseProfilePackage(text) {
+  const parsed = JSON.parse(text);
+  const checksum = parsed?.checksum;
+  const payload = parsed?.kind
+    ? {
+        kind: parsed.kind,
+        issuedAt: parsed.issuedAt,
+        siteLabel: parsed.siteLabel,
+        syncBaseUrl: parsed.syncBaseUrl,
+        studentUuid: parsed.studentUuid,
+        profileUuid: parsed.profileUuid,
+        appStudentId: parsed.appStudentId,
+        uploadToken: parsed.uploadToken,
+        connectCode: parsed.connectCode,
+        displayName: parsed.displayName,
+        instrument: parsed.instrument,
+        goal: parsed.goal,
+        profileLabel: parsed.profileLabel,
+        classId: parsed.classId,
+        className: parsed.className,
+      }
+    : null;
+
+  if (!payload || payload.kind !== "fleisstakt-profile-paket") {
+    throw new Error("ungueltiges-profilpaket");
+  }
+
+  if (!checksum || createBackupChecksum(payload) !== checksum) {
+    throw new Error("ungueltige-pruefsumme");
+  }
+
+  if (!payload.appStudentId || !payload.uploadToken || !payload.syncBaseUrl) {
+    throw new Error("ungueltiges-profilpaket");
+  }
+
+  return payload;
+}
+
+function applyProfilePackagePayload(payload) {
+  syncCurrentStateIntoProfileLibrary();
+  const nextProfile = normalizeStoredProfile({
+    storageId: payload.profileUuid || payload.appStudentId,
+    profileName: payload.displayName || "Mila",
+    profileLabel: payload.profileLabel || payload.instrument || "Profil",
+    instrument: payload.instrument || instruments[0],
+    goal: Number(payload.goal) || 15,
+    studentId: payload.appStudentId,
+    studentUuid: payload.studentUuid || "",
+    profileUuid: payload.profileUuid || "",
+    classId: payload.classId || "",
+    entries: [],
+    customCards: [],
+    syncBaseUrl: payload.syncBaseUrl,
+    syncUploadToken: payload.uploadToken,
+    syncSiteLabel: payload.siteLabel || "",
+  });
+  const existingIndex = state.profileLibrary.findIndex((profile) => profile.storageId === nextProfile.storageId);
+  if (existingIndex >= 0) {
+    state.profileLibrary[existingIndex] = {
+      ...state.profileLibrary[existingIndex],
+      ...nextProfile,
+      entries: state.profileLibrary[existingIndex].entries,
+      customCards: state.profileLibrary[existingIndex].customCards,
+    };
+  } else {
+    state.profileLibrary = [...state.profileLibrary, nextProfile];
+  }
+
+  applyStoredProfile(nextProfile);
+  state.activeScreen = "profile";
+  state.profilePanel = "profil";
+  state.settingsOpen = false;
+  state.settingsFocusId = "";
+  state.profileImportConfirmOpen = false;
+  state.pendingProfileImport = null;
+  applyModalScrollLock();
+  persistState();
+}
+
+async function importProfilePackage(file) {
+  const payload = parseProfilePackage(await file.text());
+  applyProfilePackagePayload(payload);
+  return "imported";
+}
+
+async function uploadCurrentReportPackage() {
+  if (!state.syncUploadToken) {
+    throw new Error("fehlendes-upload-token");
+  }
+
+  const payload = exportReportPackagePayload();
+  const response = await fetch(`${state.syncBaseUrl}/report`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-FleissTakt-Upload-Token": state.syncUploadToken,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.message || "upload-fehlgeschlagen");
+  }
+  return data;
+}
+
+async function connectProfileWithServer(appStudentId, connectCode) {
+  const normalizedStudentId = `${appStudentId || ""}`.trim();
+  const normalizedConnectCode = `${connectCode || ""}`.replace(/\D+/g, "").slice(0, 8);
+  if (!normalizedStudentId || !normalizedConnectCode) {
+    throw new Error("Bitte Lernenden-ID und Verbindungscode eingeben.");
+  }
+
+  const response = await fetch(`${state.syncBaseUrl}/connect-profile`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      appStudentId: normalizedStudentId,
+      connectCode: normalizedConnectCode,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok || !data?.snapshot) {
+    throw new Error(data?.message || "kopplung-fehlgeschlagen");
+  }
+  return data.snapshot;
+}
+
+async function fetchStudentSyncSnapshot() {
+  if (!state.syncUploadToken) {
+    throw new Error("fehlendes-upload-token");
+  }
+
+  const response = await fetch(`${state.syncBaseUrl}/student-sync`, {
+    method: "GET",
+    headers: {
+      "X-FleissTakt-Upload-Token": state.syncUploadToken,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok || !data?.snapshot) {
+    throw new Error(data?.message || "sync-fehlgeschlagen");
+  }
+  return data.snapshot;
+}
+
+async function syncStudentAppWithServer() {
+  const uploadResult = await uploadCurrentReportPackage();
+  const snapshot = await fetchStudentSyncSnapshot();
+  importStudentSyncSnapshot(snapshot);
+  return {
+    uploadResult,
+    snapshot,
+  };
+}
+
+function importStudentSyncSnapshot(snapshot) {
+  if (snapshot?.profile) {
+    applyProfilePackagePayload(snapshot.profile);
+  }
+
+  if (Array.isArray(snapshot?.categories)) {
+    state.practiceCategories = normalizePracticeCategories(snapshot.categories);
+    if (!state.practiceCategories.includes(state.category)) {
+      state.category = state.practiceCategories[0] || state.category;
+    }
+  }
+
+  state.customCards = Array.isArray(snapshot?.cards)
+    ? snapshot.cards
+        .map((card) => normalizeCardDefinition(card, "teacher"))
+        .sort((a, b) => a.title.localeCompare(b.title, "de"))
+    : [];
+
+  state.activeFeedbackRound = normalizeFeedbackRound(snapshot?.activeFeedbackRound);
+  if (!state.activeFeedbackRound) {
+    state.feedbackStatus = "idle";
+    state.feedbackAnswers = {};
+    state.feedbackError = "";
+  } else if (state.activeFeedbackRound.alreadyAnswered) {
+    state.feedbackStatus = "answered";
+    state.feedbackAnswers = {};
+    state.feedbackError = "";
+  } else {
+    const allowedIds = new Set(state.activeFeedbackRound.questions.map((question) => String(question.id)));
+    state.feedbackAnswers = Object.fromEntries(
+      Object.entries(state.feedbackAnswers || {}).filter(([key]) => allowedIds.has(String(key))),
+    );
+    state.feedbackStatus = Object.keys(state.feedbackAnswers).length ? "ready" : "idle";
+    state.feedbackError = "";
+  }
+
+  state.syncStatusNote = `Zuletzt mit dem Server synchronisiert: ${new Date().toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}.`;
+
+  persistState();
+}
+
+function feedbackCompletionCount() {
+  return state.activeFeedbackRound?.questions.filter((question) => state.feedbackAnswers?.[question.id]).length || 0;
+}
+
+function feedbackReadyToSubmit() {
+  const round = state.activeFeedbackRound;
+  if (!round || round.alreadyAnswered) {
+    return false;
+  }
+  return round.questions.every((question) => Number(state.feedbackAnswers?.[question.id]) >= 1);
+}
+
+async function submitFeedbackResponse() {
+  const round = state.activeFeedbackRound;
+  if (!round || round.alreadyAnswered || !round.ballotToken) {
+    throw new Error("feedback-nicht-verfuegbar");
+  }
+  if (!feedbackReadyToSubmit()) {
+    throw new Error("feedback-unvollstaendig");
+  }
+
+  const response = await fetch(`${state.syncBaseUrl}/feedback-response`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      roundId: round.roundId,
+      ballotToken: round.ballotToken,
+      answers: round.questions.map((question) => ({
+        questionId: question.id,
+        value: Number(state.feedbackAnswers?.[question.id]) || 0,
+      })),
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.message || "feedback-fehlgeschlagen");
+  }
+  return data;
+}
+
+async function runBackgroundStudentSync() {
+  if (!state.syncUploadToken) {
+    return;
+  }
+
+  if (studentSyncInProgress) {
+    studentAutoSyncPending = true;
+    return;
+  }
+
+  studentSyncInProgress = true;
+  state.syncStatusNote = "Änderungen gespeichert. Server-Sync läuft im Hintergrund...";
+  persistState();
+  render();
+
+  try {
+    do {
+      studentAutoSyncPending = false;
+      await syncStudentAppWithServer();
+    } while (studentAutoSyncPending);
+  } catch {
+    state.syncStatusNote = "Änderungen gespeichert. Server-Sync ausstehend.";
+    persistState();
+    render();
+  } finally {
+    studentSyncInProgress = false;
+  }
+}
+
+function parseConnectionPayload(value) {
+  const raw = `${value || ""}`.trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const studentId = `${parsed?.studentId || parsed?.appStudentId || ""}`.trim();
+    const connectCode = `${parsed?.connectCode || parsed?.code || ""}`.replace(/\D+/g, "").slice(0, 8);
+    const syncBaseUrl = `${parsed?.syncBaseUrl || parsed?.server || ""}`.trim();
+    if (studentId && connectCode) {
+      return {
+        studentId,
+        connectCode,
+        syncBaseUrl: syncBaseUrl ? normalizeSyncBaseUrl(syncBaseUrl) : "",
+      };
+    }
+  } catch {}
+
+  try {
+    const url = new URL(raw);
+    const studentId = `${url.searchParams.get("studentId") || url.searchParams.get("appStudentId") || ""}`.trim();
+    const connectCode = `${url.searchParams.get("code") || url.searchParams.get("connectCode") || ""}`.replace(/\D+/g, "").slice(0, 8);
+    const syncBaseUrl = `${url.searchParams.get("server") || url.searchParams.get("syncBaseUrl") || ""}`.trim();
+    if (studentId && connectCode) {
+      return {
+        studentId,
+        connectCode,
+        syncBaseUrl: syncBaseUrl ? normalizeSyncBaseUrl(syncBaseUrl) : "",
+      };
+    }
+  } catch {}
+
+  const studentMatch = raw.match(/Lernenden-ID:\s*([^\n\r]+)/i);
+  const codeMatch = raw.match(/Verbindungscode:\s*([0-9]{4,8})/i);
+  const serverMatch = raw.match(/Server:\s*(https?:\/\/[^\s]+)/i);
+  if (studentMatch?.[1] && codeMatch?.[1]) {
+    return {
+      studentId: studentMatch[1].trim(),
+      connectCode: codeMatch[1].trim(),
+      syncBaseUrl: serverMatch?.[1] ? normalizeSyncBaseUrl(serverMatch[1].trim()) : "",
+    };
+  }
+
+  return null;
+}
+
+function applyConnectionCandidate(candidate) {
+  if (!candidate) {
+    throw new Error("QR-Code oder Freigabe konnte nicht als Kopplung erkannt werden.");
+  }
+
+  if (candidate.syncBaseUrl) {
+    state.syncBaseUrl = normalizeSyncBaseUrl(candidate.syncBaseUrl);
+  }
+  state.connectStudentIdDraft = candidate.studentId;
+  state.connectCodeDraft = candidate.connectCode;
+
+  const studentIdField = document.querySelector("#connect-student-id");
+  const codeField = document.querySelector("#connect-code");
+  if (studentIdField) {
+    studentIdField.value = candidate.studentId;
+  }
+  if (codeField) {
+    codeField.value = candidate.connectCode;
+  }
+
+  return {
+    studentId: candidate.studentId,
+    connectCode: candidate.connectCode,
+  };
+}
+
+function stopQrScanner() {
+  qrScanAbort = true;
+  window.cancelAnimationFrame(qrScannerFrameHandle);
+  window.clearTimeout(scannerRetryHandle);
+  qrScannerFrameHandle = 0;
+  scannerRetryHandle = 0;
+  if (qrScannerStream) {
+    qrScannerStream.getTracks().forEach((track) => track.stop());
+    qrScannerStream = null;
+  }
+}
+
+function closeScannerDialog() {
+  stopQrScanner();
+  state.scannerOpen = false;
+  state.scannerMessage = "";
+  state.scannerState = "idle";
+  state.settingsOpen = true;
+  state.settingsFocusId = "connect-profile-button";
+  applyModalScrollLock();
+  render();
+}
+
+async function handleScannedConnectionPayload(rawValue) {
+  const candidate = parseConnectionPayload(rawValue);
+  const connection = applyConnectionCandidate(candidate);
+  closeScannerDialog();
+  return connectProfileFlow(connection.studentId, connection.connectCode);
+}
+
+async function scanConnectionImageFile(file) {
+  if (!("BarcodeDetector" in window)) {
+    throw new Error("QR-Erkennung aus Bildern wird auf diesem Gerät gerade nicht unterstützt.");
+  }
+  const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+  const bitmap = await createImageBitmap(file);
+  try {
+    const codes = await detector.detect(bitmap);
+    const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+    if (!rawValue) {
+      throw new Error("Kein QR-Code im ausgewählten Bild gefunden.");
+    }
+    await handleScannedConnectionPayload(rawValue);
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+async function startQrScanner() {
+  if (!scannerSupported()) {
+    state.scannerState = "error";
+    state.scannerMessage = "Die Kamera-QR-Erkennung wird auf diesem Gerät gerade nicht unterstützt. Du kannst stattdessen ID und Code eintippen oder ein Bild mit QR-Code auswählen.";
+    render();
+    return;
+  }
+
+  stopQrScanner();
+  qrScanAbort = false;
+  state.scannerState = "active";
+  state.scannerMessage = "Kamera wird gestartet...";
+  render();
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      facingMode: { ideal: "environment" },
+    },
+  });
+  qrScannerStream = stream;
+  render();
+
+  const video = document.querySelector("#connect-qr-video");
+  if (!video) {
+    return;
+  }
+
+  video.srcObject = stream;
+  video.setAttribute("playsinline", "true");
+  await video.play().catch(() => {});
+  state.scannerState = "active";
+  state.scannerMessage = "Halte den QR-Code aus der Lehrkräfte-App in den markierten Bereich.";
+  render();
+
+  const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+  const tick = async () => {
+    if (qrScanAbort || !state.scannerOpen) {
+      return;
+    }
+
+    try {
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        const codes = await detector.detect(video);
+        const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+        if (rawValue) {
+          await handleScannedConnectionPayload(rawValue);
+          return;
+        }
+      }
+    } catch {
+      state.scannerState = "error";
+      state.scannerMessage = "Die Kamera läuft, aber der QR-Code konnte gerade nicht gelesen werden.";
+      render();
+    }
+
+    qrScannerFrameHandle = window.requestAnimationFrame(tick);
+  };
+
+  qrScannerFrameHandle = window.requestAnimationFrame(tick);
+}
+
+function openScannerDialog() {
+  state.settingsOpen = false;
+  state.settingsFocusId = "";
+  state.scannerOpen = true;
+  state.scannerState = "idle";
+  state.scannerMessage = scannerSupported()
+    ? "Kamera wird vorbereitet..."
+    : "Dieses Gerät unterstützt die direkte Kameraerkennung gerade nicht vollständig.";
+  applyModalScrollLock();
+  render();
+}
+
+function applyConnectionFromUrl() {
+  const candidate = parseConnectionPayload(window.location.href);
+  if (!candidate) {
+    return;
+  }
+
+  if (candidate.syncBaseUrl) {
+    state.syncBaseUrl = normalizeSyncBaseUrl(candidate.syncBaseUrl);
+  }
+  state.connectStudentIdDraft = candidate.studentId;
+  state.connectCodeDraft = candidate.connectCode;
+
+  state.settingsOpen = true;
+  state.settingsFocusId = "connect-profile-button";
+  state.celebrationText = "Kopplungsdaten aus Link oder QR übernommen. Bitte jetzt verbinden.";
+  state.celebrate = true;
+
+  const url = new URL(window.location.href);
+  url.searchParams.delete("connect");
+  url.searchParams.delete("studentId");
+  url.searchParams.delete("appStudentId");
+  url.searchParams.delete("code");
+  url.searchParams.delete("connectCode");
+  url.searchParams.delete("server");
+  url.searchParams.delete("syncBaseUrl");
+  window.history.replaceState({}, "", url.toString());
+}
+
+function resetStudentAppForTesting() {
+  const nextStudentId = createStudentId();
+  state.activeScreen = "profile";
+  state.minutes = 20;
+  state.instrument = instruments[0];
+  state.practiceCategories = [...defaultPracticeCategories];
+  state.category = state.practiceCategories[0];
+  state.note = "";
+  state.profileName = "Neustart";
+  state.studentId = nextStudentId;
+  state.studentUuid = "";
+  state.profileUuid = "";
+  state.classId = "";
+  state.entries = [];
+  state.customCards = [];
+  state.syncBaseUrl = DEFAULT_SYNC_BASE_URL;
+  state.syncUploadToken = "";
+  state.syncSiteLabel = "";
+  state.activeFeedbackRound = null;
+  state.feedbackAnswers = {};
+  state.feedbackStatus = "idle";
+  state.feedbackError = "";
+  state.profilePanel = "profil";
+  state.goal = 15;
+  state.reportRange = "week";
+  state.connectStudentIdDraft = "";
+  state.connectCodeDraft = "";
+  state.activeProfileId = nextStudentId;
+  state.profileLibrary = [
+    normalizeStoredProfile({
+      storageId: nextStudentId,
+      profileName: state.profileName,
+      profileLabel: "Profil",
+      instrument: state.instrument,
+      goal: state.goal,
+      studentId: nextStudentId,
+      entries: [],
+      customCards: [],
+      syncBaseUrl: state.syncBaseUrl,
+      syncUploadToken: "",
+      syncSiteLabel: "",
+    }),
+  ];
+  state.settingsOpen = false;
+  state.settingsFocusId = "";
+  state.helpOpen = false;
+  state.profileImportConfirmOpen = false;
+  state.resetConfirmOpen = false;
+  state.resetFinalConfirmOpen = false;
+  state.pendingProfileImport = null;
+  window.localStorage.removeItem(STORAGE_KEY);
+  persistState();
+}
+
+async function connectProfileFlow(studentId, connectCode) {
+  openSyncStatus("Mit Lehrkraft verbinden", [
+    { id: "connect", label: "Profil über Lernenden-ID und Verbindungscode anfragen" },
+    { id: "apply", label: "Profil, Ziele und Server-Kontext übernehmen" },
+  ]);
+
+  try {
+    updateSyncStatus("connect", "running", "Verbindung zum FleißTakt-Server wird aufgebaut...");
+    const snapshot = await connectProfileWithServer(studentId, connectCode);
+    updateSyncStatus("connect", "done", "Profil wurde gefunden. Daten werden jetzt übernommen...");
+
+    updateSyncStatus("apply", "running", "Profil und Ziel-Kärtchen werden auf dem Gerät gespeichert...");
+    importStudentSyncSnapshot(snapshot);
+    state.settingsOpen = false;
+    state.settingsFocusId = "";
+    state.connectStudentIdDraft = state.studentId;
+    state.connectCodeDraft = "";
+    state.syncStatusNote = `Verbunden und bereit für Server-Sync seit ${new Date().toLocaleString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}.`;
+    state.activeScreen = "profile";
+    state.profilePanel = "profil";
+    applyModalScrollLock();
+    updateSyncStatus("apply", "done", "Das Lernprofil ist jetzt verbunden.");
+    finishSyncStatus("success", `Profil ${state.profileName} wurde erfolgreich verbunden.`, true);
+    state.celebrationText = `Profil ${state.profileName} verbunden.`;
+  } catch (error) {
+    const runningStep = state.syncStatusSteps.find((step) => step.state === "running");
+    if (runningStep) {
+      updateSyncStatus(runningStep.id, "error");
+    }
+    finishSyncStatus("error", error?.message || "Verbindung zur Lehrkraft gerade nicht möglich.");
+    state.celebrationText = error?.message || "Verbindung zur Lehrkraft gerade nicht möglich.";
+  }
+
+  state.celebrate = true;
+  render();
+  window.setTimeout(() => {
+    state.celebrate = false;
+    render();
+  }, 2200);
 }
 
 function createBackupChecksum(payload) {
   const normalized = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(normalized);
   let hash = 2166136261;
 
-  for (let index = 0; index < normalized.length; index += 1) {
-    hash ^= normalized.charCodeAt(index);
+  for (let index = 0; index < bytes.length; index += 1) {
+    hash ^= bytes[index];
     hash = Math.imul(hash, 16777619);
   }
 
@@ -324,8 +1611,10 @@ function createBackupChecksum(payload) {
 
 function exportReportPackagePayload() {
   const report = getReportData(state.reportRange);
+  const reportUuid = `report-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const payload = {
     kind: "fleisstakt-berichtspaket",
+    reportUuid,
     exportedAt: new Date().toISOString(),
     appVersion: state.versionInfo.appVersion,
     student: {
@@ -345,6 +1634,7 @@ function exportReportPackagePayload() {
         id: card.id,
         title: card.title,
         description: card.description,
+        source: card.source,
       })),
       entries: report.entries.map((entry) => ({ ...entry })),
     },
@@ -363,6 +1653,209 @@ function createReportPackageFileName() {
 
 function getTodayKey() {
   return formatDateKey(new Date());
+}
+
+function describeRule(rule) {
+  if (rule.type === "none") {
+    return "Keine Zielbedingung";
+  }
+  if (rule.type === "streakAtLeast") {
+    return `${rule.value} Tage in Folge geübt`;
+  }
+  if (rule.type === "dayMinutesAtLeast") {
+    return `${rule.value} Minuten an einem Tag`;
+  }
+
+  if (rule.type === "weekMinutesAtLeast") {
+    return `${rule.value} Minuten in einer Woche`;
+  }
+
+  if (rule.type === "monthMinutesAtLeast") {
+    return `${rule.value} Minuten in einem Monat`;
+  }
+
+  if (rule.type === "notedEntriesAtLeast") {
+    return `${rule.value} Einträge mit Notiz`;
+  }
+
+  if (rule.type === "categoryUsed") {
+    return `${rule.value} Einträge in ${rule.category || "einer Kategorie"}`;
+  }
+
+  if (rule.type === "categoriesCountAtLeast") {
+    return `${rule.value} verschiedene Kategorien genutzt`;
+  }
+
+  if (rule.type === "morningEntryOnce") {
+    return "Vor 8 Uhr geübt";
+  }
+
+  if (rule.type === "entriesCountAtLeast") {
+    return `${rule.value} Einträge gespeichert`;
+  }
+
+  if (rule.type === "weekEntriesAtLeast") {
+    return `${rule.value} Einträge in einer Woche`;
+  }
+
+  if (rule.type === "daysPracticedAtLeast") {
+    return `${rule.value} Übetage gesammelt`;
+  }
+
+  return "Neue Gewohnheit freischalten";
+}
+
+function getActiveCardDefinitions() {
+  const teacherCards = state.customCards
+    .map((card) => normalizeCardDefinition(card, "teacher"))
+    .filter((card) => card.status === "active")
+    .filter((card) => isCardAssignedToCurrentProfile(card));
+
+  if (state.syncUploadToken) {
+    return teacherCards;
+  }
+
+  return [
+    ...standardCardDefinitions.map((card) => normalizeCardDefinition(card, "core")),
+    ...teacherCards,
+  ];
+}
+
+function isCardAssignedToCurrentProfile(card) {
+  if (card.source === "core") {
+    return true;
+  }
+
+  if (card.assignment?.type === "class") {
+    return Boolean(state.classId) && card.assignment.targetId === state.classId;
+  }
+
+  if (card.assignment?.type === "student") {
+    return card.assignment.targetId === state.studentId;
+  }
+
+  return true;
+}
+
+function getRuleMetric(rule, stats) {
+  if (rule.type === "none") {
+    return 0;
+  }
+  if (rule.type === "streakAtLeast") {
+    return stats.streak;
+  }
+
+  if (rule.type === "dayMinutesAtLeast") {
+    return stats.todayMinutes;
+  }
+
+  if (rule.type === "weekMinutesAtLeast") {
+    return stats.weekMinutes;
+  }
+
+  if (rule.type === "monthMinutesAtLeast") {
+    return stats.monthMinutes;
+  }
+
+  if (rule.type === "notedEntriesAtLeast") {
+    return stats.notedEntryCount;
+  }
+
+  if (rule.type === "categoryUsed") {
+    return Number(stats.categoryCounts?.[rule.category] || 0);
+  }
+
+  if (rule.type === "categoriesCountAtLeast") {
+    return stats.usedCategoriesCount;
+  }
+
+  if (rule.type === "morningEntryOnce") {
+    return stats.hasMorningEntry ? 1 : 0;
+  }
+
+  if (rule.type === "entriesCountAtLeast") {
+    return stats.entryCount;
+  }
+
+  if (rule.type === "weekEntriesAtLeast") {
+    return stats.weekEntryCount;
+  }
+
+  if (rule.type === "daysPracticedAtLeast") {
+    return stats.practicedDaysCount;
+  }
+
+  return 0;
+}
+
+function isCardUnlocked(card, stats) {
+  if (card.rule.type === "none") {
+    return false;
+  }
+  const metric = getRuleMetric(card.rule, stats);
+  return metric >= card.rule.value;
+}
+
+function cardProgressPercent(card, stats) {
+  if (card.rule.type === "none") {
+    return 0;
+  }
+  const metric = getRuleMetric(card.rule, stats);
+  return Math.min(100, Math.round((metric / card.rule.value) * 100));
+}
+
+function cardProgressText(card, stats) {
+  if (card.rule.type === "none") {
+    return "Dieses Kärtchen wird direkt von der Lehrkraft verliehen.";
+  }
+  const metric = getRuleMetric(card.rule, stats);
+  const value = Math.min(metric, card.rule.value);
+
+  if (card.rule.type === "streakAtLeast") {
+    return `${value}/${card.rule.value} Tage Serie`;
+  }
+
+  if (card.rule.type === "dayMinutesAtLeast") {
+    return `${value}/${card.rule.value} Minuten heute`;
+  }
+
+  if (card.rule.type === "weekMinutesAtLeast") {
+    return `${value}/${card.rule.value} Minuten diese Woche`;
+  }
+
+  if (card.rule.type === "monthMinutesAtLeast") {
+    return `${value}/${card.rule.value} Minuten in diesem Monat`;
+  }
+
+  if (card.rule.type === "notedEntriesAtLeast") {
+    return `${value}/${card.rule.value} Einträge mit Notiz`;
+  }
+
+  if (card.rule.type === "categoryUsed") {
+    return `${value}/${card.rule.value} Einträge in ${card.rule.category || "dieser Kategorie"}`;
+  }
+
+  if (card.rule.type === "categoriesCountAtLeast") {
+    return `${value}/${card.rule.value} Kategorien genutzt`;
+  }
+
+  if (card.rule.type === "morningEntryOnce") {
+    return metric ? "Vor 8 Uhr geschafft" : "Ein Morgen-Eintrag fehlt noch";
+  }
+
+  if (card.rule.type === "entriesCountAtLeast") {
+    return `${value}/${card.rule.value} Einträge gespeichert`;
+  }
+
+  if (card.rule.type === "weekEntriesAtLeast") {
+    return `${value}/${card.rule.value} Einträge diese Woche`;
+  }
+
+  if (card.rule.type === "daysPracticedAtLeast") {
+    return `${value}/${card.rule.value} Übetage gesammelt`;
+  }
+
+  return describeRule(card.rule);
 }
 
 function getStats() {
@@ -412,8 +1905,17 @@ function getStats() {
     .reduce((sum, entry) => sum + entry.minutes, 0);
 
   const weekMinutes = weeklyEntries.reduce((sum, entry) => sum + entry.minutes, 0);
+  const monthStart = new Date(new Date(`${today}T12:00:00`).getFullYear(), new Date(`${today}T12:00:00`).getMonth(), 1, 12, 0, 0, 0);
+  const monthlyEntries = entries.filter((entry) => new Date(`${entry.date}T12:00:00`) >= monthStart);
+  const monthMinutes = monthlyEntries.reduce((sum, entry) => sum + entry.minutes, 0);
   const notedEntryCount = entries.filter((entry) => entry.note.trim()).length;
   const hasMorningEntry = entries.some((entry) => new Date(entry.savedAt).getHours() < 8);
+  const practicedDaysCount = new Set(entries.map((entry) => entry.date)).size;
+  const categoryCounts = entries.reduce((map, entry) => {
+    map[entry.category] = (map[entry.category] || 0) + 1;
+    return map;
+  }, {});
+  const usedCategoriesCount = Object.keys(categoryCounts).length;
 
   return {
     entries,
@@ -421,8 +1923,14 @@ function getStats() {
     streak,
     todayMinutes,
     weekMinutes,
+    monthMinutes,
     notedEntryCount,
     hasMorningEntry,
+    entryCount: entries.length,
+    practicedDaysCount,
+    weekEntryCount: weeklyEntries.length,
+    categoryCounts,
+    usedCategoriesCount,
   };
 }
 
@@ -481,57 +1989,28 @@ function getReportActionLabel() {
 }
 
 function getCards(stats) {
-  return cardDefinitions.map((card) => ({
-    ...card,
-    unlocked: card.isUnlocked(stats),
-    statusLabel: card.isUnlocked(stats) ? "Ge&shy;sam&shy;melt" : "Bald frei",
-    symbol:
-      {
-        "warm-gespielt": "♬",
-        taktsicher: "✦",
-        morgenklang: "☀",
-        buehnenmut: "✺",
-      }[card.id] || "♪",
-    rarity:
-      {
-        "warm-gespielt": "Bronze",
-        taktsicher: "Gold",
-        morgenklang: "Silber",
-        buehnenmut: "Spezial",
-      }[card.id] || "Basis",
-    progressText: cardProgressText(card.id, stats),
-  }));
+  return getActiveCardDefinitions().map((card) => {
+    const manuallyAwarded = card.award?.mode === "manual";
+    const unlocked = manuallyAwarded || isCardUnlocked(card, stats);
+    const noConditionReward = card.rule.type === "none";
+    return {
+      ...card,
+      manuallyAwarded,
+      unlocked,
+      statusLabel: manuallyAwarded ? "Verliehen" : unlocked ? "Ge&shy;sam&shy;melt" : noConditionReward ? "Belohnung" : "Bald frei",
+      progressPercent: manuallyAwarded ? 100 : cardProgressPercent(card, stats),
+      progressText: manuallyAwarded ? "Direkt von der Lehrkraft verliehen" : cardProgressText(card, stats),
+    };
+  });
 }
 
-function cardProgressText(cardId, stats) {
-  if (cardId === "warm-gespielt") {
-    return `${Math.min(stats.streak, 3)}/3 Tage Serie`;
+function nextCardProgress(cards) {
+  const lockedCards = cards.filter((card) => !card.unlocked);
+  if (!lockedCards.length) {
+    return 100;
   }
 
-  if (cardId === "taktsicher") {
-    return `${Math.min(stats.weekMinutes, 60)}/60 Minuten diese Woche`;
-  }
-
-  if (cardId === "morgenklang") {
-    return stats.hasMorningEntry ? "Vor 8 Uhr geschafft" : "Ein Morgen-Eintrag fehlt noch";
-  }
-
-  if (cardId === "buehnenmut") {
-    return `${Math.min(stats.notedEntryCount, 7)}/7 Einträge mit Notiz`;
-  }
-
-  return "";
-}
-
-function nextCardProgress(stats) {
-  const progressCandidates = [
-    Math.min(100, Math.round((stats.streak / 3) * 100)),
-    Math.min(100, Math.round((stats.weekMinutes / 60) * 100)),
-    Math.min(100, Math.round((stats.notedEntryCount / 7) * 100)),
-    stats.hasMorningEntry ? 100 : 20,
-  ];
-
-  return Math.max(...progressCandidates);
+  return Math.max(...lockedCards.map((card) => card.progressPercent));
 }
 
 function nextCardName(cards) {
@@ -542,17 +2021,23 @@ function nextCardName(cards) {
 function todayScreen() {
   const stats = getStats();
   const cards = getCards(stats);
-  const progress = nextCardProgress(stats);
+  const progress = nextCardProgress(cards);
   const unlockedCount = cards.filter((card) => card.unlocked).length;
+  const hasManagedProfile = Boolean(state.syncUploadToken);
+  const heroTitle = hasManagedProfile
+    ? "Einträge sichtbar machen und zugewiesene Ziele im Blick behalten."
+    : "Jeder Eintrag bringt ein neues Kärtchen näher.";
+  const heroCopy = hasManagedProfile
+    ? "Schnell protokollieren, den Server synchron halten und sehen, welche Ziel-Kärtchen schon erreicht oder direkt verliehen wurden."
+    : "Schnell protokollieren, Serie halten und kleine Erfolgsmomente sammeln.";
+  const nextLabel = hasManagedProfile ? "Nächstes Ziel-Kärtchen" : "Nächstes Fleiß-Kärtchen";
 
   return `
     <section class="screen screen-today">
       <div class="hero-panel">
         <p class="hero-kicker">Heute im Takt bleiben</p>
-        <h2>Jeder Eintrag bringt ein neues Kärtchen näher.</h2>
-        <p class="hero-copy">
-          Schnell protokollieren, Serie halten und kleine Erfolgsmomente sammeln.
-        </p>
+        <h2>${heroTitle}</h2>
+        <p class="hero-copy">${heroCopy}</p>
         <div class="hero-actions">
           <button class="primary-button" type="button" data-nav="log">Übung eintragen</button>
           <button class="secondary-button" type="button" data-nav="cards">Kärtchen ansehen</button>
@@ -595,7 +2080,7 @@ function todayScreen() {
 
       <section class="progress-band">
         <div class="progress-copy">
-          <p class="label">Nächstes Fleiß-Kärtchen</p>
+          <p class="label">${nextLabel}</p>
           <strong>${nextCardName(cards)}</strong>
         </div>
         <div class="progress-track" aria-hidden="true">
@@ -627,6 +2112,7 @@ function todayScreen() {
 }
 
 function logScreen() {
+  const categories = getPracticeCategories();
   return `
     <section class="screen screen-log">
       <div class="section-head">
@@ -682,18 +2168,46 @@ function cardsScreen() {
   const stats = getStats();
   const cards = getCards(stats);
   const unlockedCount = cards.filter((card) => card.unlocked).length;
+  const hasManagedProfile = Boolean(state.syncUploadToken);
+  const heading = hasManagedProfile ? "Ziel-Kärtchen" : "Fleiß-Kärtchen";
+  const intro = hasManagedProfile
+    ? "Diese Ziele wurden über das Profil der Lehrkräfte-App zugewiesen und beim Server-Sync aktualisiert."
+    : "Sammle kleine Etappensiege statt trockener Statistiken.";
+  const kicker = hasManagedProfile ? "Zugewiesene Ziele" : "Sammelstand";
+  const summary = hasManagedProfile
+    ? `${unlockedCount} von ${cards.length} Zielen erreicht`
+    : `${unlockedCount} von ${cards.length} gesammelt`;
+  const statsLine = hasManagedProfile
+    ? `Serie ${stats.streak} Tage · ${stats.weekMinutes} Minuten in dieser Woche`
+    : `Serie ${stats.streak} Tage · ${stats.weekMinutes} Minuten in dieser Woche`;
+  const emptyState = hasManagedProfile
+    ? `
+      <article class="reward-card accent-sky is-locked">
+        <div class="reward-topline">
+          <p class="reward-state">Noch nichts zugewiesen</p>
+          <span class="reward-rarity">Sync</span>
+        </div>
+        <div class="reward-symbol">◎</div>
+        <div class="reward-copy">
+          <h3>Noch keine Ziel-Kärtchen</h3>
+          <p>Bitte die App mit dem Server synchronisieren oder in der Lehrkräfte-App neue Ziele zuweisen lassen.</p>
+          <p class="reward-progress">Sobald Ziele zugewiesen sind, erscheinen sie hier automatisch.</p>
+        </div>
+      </article>
+    `
+    : "";
 
   return `
     <section class="screen screen-cards">
       <div class="section-head">
-        <h2>Fleiß-Kärtchen</h2>
-        <p>Sammle kleine Etappensiege statt trockener Statistiken.</p>
+        <h2>${heading}</h2>
+        <p>${intro}</p>
       </div>
       <section class="cards-hero">
         <div class="cards-hero-copy">
-          <p class="label">Sammelstand</p>
-          <h3>${unlockedCount} von ${cards.length} gesammelt</h3>
-          <p>Serie ${stats.streak} Tage · ${stats.weekMinutes} Minuten in dieser Woche</p>
+          <p class="label">${kicker}</p>
+          <h3>${summary}</h3>
+          <p>${statsLine}</p>
         </div>
         <div class="album-strip">
           ${cards
@@ -703,13 +2217,14 @@ function cardsScreen() {
                   <span>${card.symbol}</span>
                   <strong>${card.title}</strong>
                 </div>
-              `,
-            )
-            .join("")}
+            `,
+          )
+          .join("") || (hasManagedProfile ? `<div class="album-chip is-locked accent-sky"><span>◎</span><strong>Warten auf Sync</strong></div>` : "")}
         </div>
       </section>
       <div class="card-grid">
-        ${cards
+        ${cards.length
+          ? cards
           .map(
             (card) => `
               <article class="reward-card accent-${card.accent} ${card.unlocked ? "is-unlocked" : "is-locked"}">
@@ -722,11 +2237,20 @@ function cardsScreen() {
                   <h3>${card.title}</h3>
                   <p>${card.description}</p>
                   <p class="reward-progress">${card.progressText}</p>
+                  ${
+                    card.manuallyAwarded
+                      ? `
+                        <p class="reward-award-meta">${card.award?.awardedBy ? `Von ${escapeHtml(card.award.awardedBy)}` : "Direkt verliehen"}${card.award?.awardedAt ? ` · ${escapeHtml(new Date(card.award.awardedAt).toLocaleDateString("de-DE"))}` : ""}</p>
+                        ${card.award?.note ? `<p class="reward-award-note"><span>Nachricht der Lehrkraft</span>${escapeHtml(card.award.note)}</p>` : ""}
+                      `
+                      : ""
+                  }
                 </div>
               </article>
             `,
           )
-          .join("")}
+          .join("")
+          : emptyState}
       </div>
     </section>
   `;
@@ -781,6 +2305,10 @@ function profileScreen() {
   const stats = getStats();
   const lastEntries = stats.entries.slice(0, 3);
   const reportData = getReportData(state.reportRange);
+  const hasManagedProfile = Boolean(state.syncUploadToken);
+  const activeTeacherCards = state.customCards.filter((card) => card.status === "active").length;
+  const profiles = profileSwitcherOptions();
+  const activeProfileLabel = profiles.find((profile) => profile.storageId === state.activeProfileId)?.profileLabel || state.instrument || "Profil";
 
   return `
     <section class="screen screen-profile">
@@ -795,40 +2323,71 @@ function profileScreen() {
         <button class="pill ${state.profilePanel === "begleitung" ? "is-active" : ""}" type="button" data-panel="begleitung">
           Begleitung
         </button>
+        <button class="pill ${state.profilePanel === "feedback" ? "is-active" : ""}" type="button" data-panel="feedback">
+          Feedback
+        </button>
       </div>
       ${
         state.profilePanel === "profil"
           ? `
       <form class="settings-form" id="profile-form">
+        <div class="profile-connection-card">
+          <strong>Aktives Lernprofil</strong>
+          <p>${escapeHtml(state.profileName || "Unbekannt")} · ${escapeHtml(activeProfileLabel)} · Ziel ${state.goal} Minuten</p>
+          <small>${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Lernprofil mit dem Server verbunden."}</small>
+        </div>
         <label class="field">
-          <span>Lernenden-ID</span>
-          <input type="text" value="${escapeHtml(state.studentId)}" readonly />
-          <small class="field-hint">Wichtig bei Gerätewechsel: Backup exportieren und auf dem neuen Gerät importieren, damit diese ID erhalten bleibt.</small>
-        </label>
-        <label class="field">
-          <span>Name</span>
-          <input id="profile-name" type="text" value="${escapeHtml(state.profileName)}" maxlength="24" />
-        </label>
-        <label class="field">
-          <span>Hauptinstrument</span>
-          <select id="profile-instrument">
-            ${instruments
+          <span>Profil umschalten</span>
+          <select id="active-profile-select">
+            ${profiles
               .map(
-                (item) => `
-                  <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
+                (profile) => `
+                  <option value="${escapeHtml(profile.storageId)}" ${profile.storageId === state.activeProfileId ? "selected" : ""}>
+                    ${escapeHtml(`${profile.profileName} · ${profile.profileLabel || profile.instrument || "Profil"}`)}
+                  </option>
                 `,
               )
               .join("")}
           </select>
+          <small class="field-hint">Jedes Profil steht für einen eigenen Unterrichtskontext mit eigener Lehrkraft-Anbindung.</small>
         </label>
         <label class="field">
-          <span>Tagesziel in Minuten</span>
-          <input id="profile-goal" type="range" min="5" max="60" step="5" value="${state.goal}" />
-          <strong class="range-value" id="goal-value">${state.goal} Minuten</strong>
+          <span>Lernenden-ID</span>
+          <input type="text" value="${escapeHtml(state.studentId)}" readonly />
+          <small class="field-hint">Wichtig bei Gerätewechsel: Backup speichern oder über "Auf neues Gerät umziehen" teilen und auf dem neuen Gerät importieren, damit diese ID erhalten bleibt.</small>
         </label>
-        <button class="primary-button" id="save-profile" type="submit">Profil speichern</button>
-        <button class="secondary-action" id="export-report-package" type="button">FleißTakt-Berichtspaket exportieren</button>
-        <p class="profile-note">Für ein neues Gerät zuerst Backup exportieren. Nur so bleiben Lernenden-ID und Verlauf zusammen.</p>
+        <label class="field">
+          <span>Name</span>
+          <input id="profile-name" type="text" value="${escapeHtml(state.profileName)}" maxlength="24" ${hasManagedProfile ? "readonly" : ""} />
+          ${hasManagedProfile ? '<small class="field-hint">Der Name kommt aus dem Profil der Lehrkräfte-App und wird hier nicht lokal überschrieben.</small>' : ""}
+        </label>
+          <label class="field">
+            <span>Hauptinstrument</span>
+            <select id="profile-instrument" ${hasManagedProfile ? "disabled" : ""}>
+              ${instruments
+                .map(
+                  (item) => `
+                    <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
+                  `,
+                )
+                .join("")}
+            </select>
+            ${hasManagedProfile ? '<small class="field-hint">Dieses Instrument kommt aus dem Profil der Lehrkräfte-App und kann hier nicht geändert werden.</small>' : ""}
+          </label>
+        <label class="field">
+          <span>Tagesziel in Minuten</span>
+          <input id="profile-goal" type="range" min="5" max="60" step="5" value="${state.goal}" ${hasManagedProfile ? "disabled" : ""} />
+          <strong class="range-value" id="goal-value">${state.goal} Minuten</strong>
+          ${hasManagedProfile ? '<small class="field-hint">Das Ziel wird mit dem Profil der Lehrkräfte-App synchronisiert und nicht direkt auf dem Gerät geändert.</small>' : ""}
+        </label>
+        ${
+          hasManagedProfile
+            ? `<button class="primary-button sync-action" id="profile-sync-button" type="button">Mit Server synchronisieren</button>`
+            : `<button class="primary-button" id="save-profile" type="submit">Profil speichern</button>`
+        }
+        <p class="profile-note">${state.syncUploadToken ? `Server verbunden: ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}. Der Sync sendet den aktuellen Bericht und lädt zugewiesene Kärtchen neu.` : "Noch keine Server-Kopplung aktiv. Verbinde dieses Gerät in den Einstellungen mit Lernenden-ID und Verbindungscode."}</p>
+        ${state.syncUploadToken ? `<p class="profile-note">${escapeHtml(state.syncStatusNote || "Nach dem nächsten Eintrag oder einem manuellen Sync wird der Serverstand aktualisiert.")}</p>` : ""}
+        <p class="profile-note">Für ein neues Gerät zuerst ein Backup speichern oder teilen. Nur so bleiben Lernenden-ID und Verlauf zusammen.</p>
       </form>
       <div class="profile-stack">
         <article class="profile-line">
@@ -843,9 +2402,14 @@ function profileScreen() {
           <span>Freigeschaltete Kärtchen</span>
           <strong>${getCards(stats).filter((card) => card.unlocked).length}</strong>
         </article>
+        <article class="profile-line">
+          <span>Lehrkräfte-Kärtchen aktiv</span>
+          <strong>${activeTeacherCards}</strong>
+        </article>
       </div>
       `
-          : `
+          : state.profilePanel === "begleitung"
+            ? `
       <div class="profile-stack">
         <article class="profile-line">
           <span>Diese Woche</span>
@@ -858,6 +2422,10 @@ function profileScreen() {
         <article class="profile-line">
           <span>Freigeschaltete Kärtchen</span>
           <strong>${getCards(stats).filter((card) => card.unlocked).length}</strong>
+        </article>
+        <article class="profile-line">
+          <span>Lehrkräfte-Kärtchen aktiv</span>
+          <strong>${activeTeacherCards}</strong>
         </article>
         <article class="profile-line">
           <span>Letzte Einträge</span>
@@ -945,6 +2513,80 @@ function profileScreen() {
         </div>
       </section>
       `
+            : `
+      <section class="mentor-panel feedback-panel">
+        <div class="section-head">
+          <h3>Rückmeldung zum Unterricht</h3>
+          <p>Anonym, einmalig und ohne Sicht auf Einzelantworten.</p>
+        </div>
+        ${
+          !state.syncUploadToken
+            ? `
+              <article class="mentor-card">
+                <strong>Noch keine Rückmeldung verfügbar</strong>
+                <p>Verbinde zuerst ein Lernprofil mit einer Lehrkraft. Danach kann hier eine anonyme Rückmeldung auftauchen.</p>
+              </article>
+            `
+            : !state.activeFeedbackRound
+              ? `
+                <article class="mentor-card">
+                  <strong>Gerade ist keine Runde offen</strong>
+                  <p>Sobald eine Rückmeldung freigeschaltet ist, kannst du sie hier direkt beantworten.</p>
+                </article>
+              `
+              : state.activeFeedbackRound.alreadyAnswered || state.feedbackStatus === "answered" || state.feedbackStatus === "success"
+                ? `
+                  <article class="mentor-card">
+                    <strong>Danke für deine Rückmeldung</strong>
+                    <p>Deine Antwort wurde anonym gespeichert. Deine Lehrkraft sieht nur die gemeinsame Auswertung mehrerer Rückmeldungen.</p>
+                  </article>
+                `
+                : `
+                  <article class="mentor-card">
+                    <strong>${escapeHtml(state.activeFeedbackRound.title)}</strong>
+                    <p>${escapeHtml(state.activeFeedbackRound.introText)}</p>
+                    <p>${feedbackCompletionCount()} von ${state.activeFeedbackRound.questions.length} Fragen beantwortet.</p>
+                  </article>
+                  <div class="feedback-question-list">
+                    ${state.activeFeedbackRound.questions
+                      .map(
+                        (question) => `
+                          <article class="mentor-card feedback-question-card">
+                            <strong>${escapeHtml(question.label)}</strong>
+                            <div class="feedback-scale" role="group" aria-label="${escapeHtml(question.label)}">
+                              ${[1, 2, 3, 4, 5]
+                                .map(
+                                  (value) => `
+                                    <button
+                                      class="feedback-scale-button ${Number(state.feedbackAnswers?.[question.id]) === value ? "is-active" : ""}"
+                                      type="button"
+                                      data-feedback-question="${question.id}"
+                                      data-feedback-value="${value}"
+                                    >
+                                      ${value}
+                                    </button>
+                                  `,
+                                )
+                                .join("")}
+                            </div>
+                            <div class="feedback-scale-labels">
+                              <span>gar nicht</span>
+                              <span>voll</span>
+                            </div>
+                          </article>
+                        `,
+                      )
+                      .join("")}
+                  </div>
+                  ${state.feedbackError ? `<p class="profile-note feedback-note is-error">${escapeHtml(state.feedbackError)}</p>` : ""}
+                  <button class="primary-button feedback-submit-button" id="submit-feedback-button" type="button" ${state.feedbackStatus === "sending" ? "disabled" : ""}>
+                    ${state.feedbackStatus === "sending" ? "Wird gesendet..." : "Anonym absenden"}
+                  </button>
+                  <p class="profile-note feedback-note">Du kannst einmal teilnehmen. Die Antworten laufen anonym an die gemeinsame Auswertung.</p>
+                `
+        }
+      </section>
+      `
       }
     </section>
   `;
@@ -974,7 +2616,7 @@ function render() {
   applyModalScrollLock();
   root.innerHTML = `
     <div class="app-shell">
-      <div class="app-frame ${state.celebrate ? "is-celebrating" : ""} ${(state.settingsOpen || state.helpOpen) ? "is-modal-open" : ""}">
+      <div class="app-frame ${state.celebrate ? "is-celebrating" : ""} ${(state.settingsOpen || state.helpOpen || state.profileImportConfirmOpen || state.resetConfirmOpen || state.resetFinalConfirmOpen || state.scannerOpen || state.syncStatusOpen) ? "is-modal-open" : ""}">
         <header class="topbar">
           <div>
             <p class="eyebrow">Üben sichtbar machen</p>
@@ -1033,11 +2675,42 @@ function render() {
 
           <section class="settings-block">
             <h3>Backup</h3>
-            <p class="settings-copy">Alle Einträge und Profileinstellungen als Datei sichern oder wieder einspielen.</p>
+            <p class="settings-copy">Backup speichert die Datei lokal. Für Gerätewechsel kann dieselbe Datei direkt über Teilen an das neue Gerät geschickt werden.</p>
             <div class="settings-actions">
-              <button class="secondary-action" type="button" id="export-backup-button">Backup exportieren</button>
+              <button class="secondary-action" type="button" id="move-device-button">Auf neues Gerät umziehen</button>
+              <button class="secondary-action" type="button" id="export-backup-button">Backup speichern</button>
               <label class="secondary-action settings-file-label" for="backup-input">Backup importieren</label>
               <input id="backup-input" type="file" accept="application/json,.json" hidden />
+            </div>
+          </section>
+
+          <section class="settings-block">
+            <h3>Mit Lehrkraft verbinden</h3>
+            <p class="settings-copy">Die Lehrkraft teilt für das gewählte Profil einen QR-Code oder die Kombination aus Lernenden-ID und Verbindungscode. Lernende scannen den QR-Code oder geben die Daten hier ein und verbinden so ihr Gerät mit dem richtigen Profil.</p>
+            <div class="settings-actions settings-actions-single">
+              <button class="secondary-action sync-action" type="button" id="open-qr-scanner">QR-Code scannen</button>
+            </div>
+            <div class="settings-connect-form" id="connect-profile-form">
+              <label class="field settings-field">
+                <span>Lernenden-ID</span>
+                <input id="connect-student-id" type="text" value="${escapeHtml(state.connectStudentIdDraft || (state.syncUploadToken ? state.studentId : ""))}" placeholder="z. B. app-..." autocapitalize="off" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="field settings-field">
+                <span>Verbindungscode</span>
+                <input id="connect-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${escapeHtml(state.connectCodeDraft)}" placeholder="4-stellig" autocomplete="one-time-code" />
+              </label>
+              <div class="settings-actions settings-actions-single">
+                <button class="secondary-action sync-action" type="button" id="connect-profile-button">Mit Lehrkraft verbinden</button>
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button class="secondary-action sync-action" type="button" id="student-sync-button" ${state.syncUploadToken ? "" : "disabled"}>Mit Server synchronisieren</button>
+            </div>
+            <p class="settings-copy">${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Lernprofil verbunden."}</p>
+            <p class="settings-copy">Fallback: Wenn QR-Code oder Code-Eingabe nicht klappen, kannst du weiterhin ein Profilpaket importieren.</p>
+            <div class="settings-actions">
+              <label class="secondary-action settings-file-label" for="profile-package-input">Profilpaket importieren</label>
+              <input id="profile-package-input" type="file" accept="application/json,.json" hidden />
             </div>
           </section>
 
@@ -1063,10 +2736,20 @@ function render() {
           <section class="settings-block">
             <h3>Updates</h3>
             <p class="settings-copy" id="version-label">Version ${escapeHtml(state.versionInfo.appVersion)} · Cache ${escapeHtml(state.versionInfo.cacheVersion)}</p>
+            <p class="settings-copy">FleißTakt läuft auch offline weiter. Für eine Update-Prüfung braucht das Gerät nur kurz eine Internet-Verbindung.</p>
             <p class="settings-status" data-state="${state.updateState}">${escapeHtml(state.updateStatus)}</p>
             <div class="settings-actions">
               <button class="secondary-action" type="button" id="check-updates-button">Nach Updates suchen</button>
-              ${state.updateReady ? `<button class="secondary-action" type="button" id="reload-app-button">App neu laden</button>` : ""}
+              <button class="secondary-action" type="button" id="reload-app-button">App neu laden</button>
+            </div>
+          </section>
+
+          <section class="settings-block settings-block-danger">
+            <h3>Test-Reset</h3>
+            <p class="settings-copy">Für die Testphase kannst du alle lokalen Daten auf diesem Gerät löschen und danach neu mit Lernenden-ID und Verbindungscode starten.</p>
+            <p class="settings-copy">Vorher am besten ein Backup speichern, wenn Einträge, Profile oder Verlauf noch gebraucht werden.</p>
+            <div class="settings-actions settings-actions-close">
+              <button class="secondary-action danger-action" type="button" id="open-reset-confirm">Alles löschen</button>
             </div>
           </section>
 
@@ -1076,8 +2759,8 @@ function render() {
         </form>
       </dialog>
 
-      <dialog class="settings-dialog" id="help-dialog">
-        <form method="dialog" class="settings-sheet" tabindex="-1">
+        <dialog class="settings-dialog" id="help-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
           <div class="section-head">
             <h2>Schneller Einstieg</h2>
             <p>So klappt der Start mit FleißTakt in wenigen Schritten.</p>
@@ -1087,24 +2770,24 @@ function render() {
             <h3>So startest du</h3>
             <div class="help-list">
               <article class="help-step">
-                <strong>1. Profil öffnen</strong>
-                <p>Im Profilbereich starten Lernende mit den Grundeinstellungen.</p>
+                <strong>1. Mit Lehrkraft verbinden</strong>
+                <p>Am einfachsten per QR-Code aus der Lehrkräfte-App, alternativ mit Lernenden-ID und Verbindungscode.</p>
               </article>
               <article class="help-step">
-                <strong>2. Namen eintragen</strong>
-                <p>So wirkt die App persönlich und der Bericht ist klar zuordenbar.</p>
+                <strong>2. Profil laden</strong>
+                <p>Name, Instrument, Profilbezeichnung und Tagesziel kommen danach direkt vom Server.</p>
               </article>
               <article class="help-step">
-                <strong>3. Hauptinstrument wählen</strong>
-                <p>Zum Beispiel Klavier, Violine, Gitarre oder Cello.</p>
+                <strong>3. Übeeinheit eintragen</strong>
+                <p>Nach dem Üben nur Minuten, Schwerpunkt und auf Wunsch eine Notiz ergänzen.</p>
               </article>
               <article class="help-step">
-                <strong>4. Tagesziel festlegen</strong>
-                <p>Zum Beispiel 10, 15 oder 20 Minuten, passend zum Alter und Niveau.</p>
+                <strong>4. Mit Server synchronisieren</strong>
+                <p>So landen Bericht und Fortschritt bei den Lehrkräften und neue Ziel-Kärtchen kommen zurück.</p>
               </article>
               <article class="help-step">
-                <strong>5. Ersten Eintrag machen</strong>
-                <p>Danach kann sofort die erste Übeeinheit eingetragen werden.</p>
+                <strong>5. Bei Gerätewechsel Backup nutzen</strong>
+                <p>Für ein neues Gerät am besten zuerst Backup speichern oder teilen, damit alles zusammenbleibt.</p>
               </article>
             </div>
           </section>
@@ -1112,10 +2795,157 @@ function render() {
           <div class="settings-actions settings-actions-close">
             <button class="secondary-action" type="button" id="close-help">Schließen</button>
           </div>
-        </form>
-      </dialog>
-    </div>
-  `;
+          </form>
+        </dialog>
+
+        <dialog class="settings-dialog" id="profile-import-confirm-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
+            <div class="section-head">
+              <h2>Profil wirklich ersetzen?</h2>
+              <p>Dieses Gerät ist bereits mit einem anderen Lernprofil verbunden.</p>
+            </div>
+
+            <section class="settings-block">
+              <div class="confirm-summary">
+                <article class="confirm-card">
+                  <strong>Aktuell auf diesem Gerät</strong>
+                  <p>${escapeHtml(state.profileName || "Unbekannt")} · ${escapeHtml(state.instrument || "Kein Instrument")}</p>
+                  <p class="settings-copy">${state.entries.length} Einträge auf diesem Gerät</p>
+                </article>
+                <article class="confirm-card">
+                  <strong>Neues Profilpaket</strong>
+                  <p>${escapeHtml(state.pendingProfileImport?.displayName || "Unbekannt")} · ${escapeHtml(state.pendingProfileImport?.instrument || "Kein Instrument")}</p>
+                  <p class="settings-copy">${escapeHtml(state.pendingProfileImport?.profileLabel || "Profil")}</p>
+                </article>
+              </div>
+              <p class="settings-copy">Beim Ersetzen werden die bisherigen Einträge und Lehrkräfte-Kärtchen auf diesem Gerät geleert, damit keine Daten von zwei Lernenden vermischt werden.</p>
+            </section>
+
+            <div class="settings-actions">
+              <button class="secondary-action" type="button" id="cancel-profile-import">Abbrechen</button>
+              <button class="secondary-action primary-action" type="button" id="confirm-profile-import">Profil ersetzen</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog class="settings-dialog" id="scanner-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
+            <div class="section-head">
+              <h2>QR-Code scannen</h2>
+              <p>Scanne den Kopplungs-QR aus der Lehrkräfte-App oder wähle ein Bild mit QR-Code aus.</p>
+            </div>
+
+            <section class="settings-block">
+              <div class="scanner-shell">
+                <div class="scanner-stage ${state.scannerState === "error" ? "is-error" : ""}">
+                  <video id="connect-qr-video" class="scanner-video" autoplay muted playsinline></video>
+                  <div class="scanner-frame" aria-hidden="true"></div>
+                </div>
+                <p class="settings-copy">${escapeHtml(connectionScannerText())}</p>
+              </div>
+            </section>
+
+            <div class="settings-actions">
+              <label class="secondary-action settings-file-label" for="scanner-image-input">QR-Bild auswählen</label>
+              <input id="scanner-image-input" type="file" accept="image/*" hidden />
+              <button class="secondary-action" type="button" id="restart-qr-scanner">Kamera neu starten</button>
+            </div>
+
+            <div class="settings-actions settings-actions-close">
+              <button class="secondary-action" type="button" id="close-scanner">Schließen</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog class="settings-dialog" id="sync-status-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
+            <div class="section-head">
+              <h2>${escapeHtml(state.syncStatusTitle || "Server-Sync")}</h2>
+              <p>${escapeHtml(state.syncStatusMessage || "Bitte kurz warten...")}</p>
+            </div>
+
+            <section class="settings-block">
+              <div class="sync-status-list">
+                ${state.syncStatusSteps
+                  .map(
+                    (step) => `
+                      <article class="sync-status-item is-${step.state}">
+                        <strong>${escapeHtml(step.label)}</strong>
+                        <span>${
+                          step.state === "done"
+                            ? "Fertig"
+                            : step.state === "running"
+                              ? "Läuft"
+                              : step.state === "error"
+                                ? "Fehler"
+                                : "Wartet"
+                        }</span>
+                      </article>
+                    `,
+                  )
+                  .join("")}
+              </div>
+            </section>
+
+            <div class="settings-actions settings-actions-close">
+              <button class="secondary-action" type="button" id="close-sync-status" ${state.syncStatusState === "running" ? "disabled" : ""}>Schließen</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog class="settings-dialog" id="reset-confirm-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
+            <div class="section-head">
+              <h2>Test-Reset vorbereiten</h2>
+              <p>Diese Aktion entfernt alle lokalen Daten auf diesem Gerät.</p>
+            </div>
+
+            <section class="settings-block">
+              <div class="confirm-summary">
+                <article class="confirm-card">
+                  <strong>Was gelöscht wird</strong>
+                  <p>Alle Lernprofile, Einträge, lokalen Kärtchen und die aktuelle Server-Kopplung auf diesem Gerät.</p>
+                </article>
+                <article class="confirm-card">
+                  <strong>Vorher empfohlen</strong>
+                  <p>Bitte zuerst ein Backup speichern, wenn du den aktuellen Stand später noch brauchst.</p>
+                </article>
+              </div>
+              <p class="settings-copy">Nach dem Reset startet die App wieder frisch und kann direkt neu mit Lernenden-ID und Verbindungscode gekoppelt werden.</p>
+            </section>
+
+            <div class="settings-actions">
+              <button class="secondary-action" type="button" id="cancel-reset-confirm">Abbrechen</button>
+              <button class="secondary-action primary-action" type="button" id="continue-reset-confirm">Weiter</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog class="settings-dialog" id="reset-final-confirm-dialog">
+          <form method="dialog" class="settings-sheet" tabindex="-1">
+            <div class="section-head">
+              <h2>Wirklich alles löschen?</h2>
+              <p>Dieser Schritt löscht die lokalen Daten jetzt sofort.</p>
+            </div>
+
+            <section class="settings-block settings-block-danger">
+              <div class="confirm-summary">
+                <article class="confirm-card confirm-card-danger">
+                  <strong>Lokaler Geräte-Reset</strong>
+                  <p>Einträge, Profile, Verlauf und die bestehende Verbindung zu den Lehrkräften werden auf diesem Gerät entfernt.</p>
+                </article>
+              </div>
+              <p class="settings-copy">Wenn du noch kein Backup gespeichert hast, geh jetzt besser zurück und sichere den Stand zuerst.</p>
+            </section>
+
+            <div class="settings-actions">
+              <button class="secondary-action" type="button" id="cancel-final-reset">Zurück</button>
+              <button class="secondary-action danger-action" type="button" id="confirm-final-reset">Jetzt alles löschen</button>
+            </div>
+          </form>
+        </dialog>
+      </div>
+    `;
 
   bindEvents();
 }
@@ -1162,6 +2992,85 @@ function bindEvents() {
     });
   }
 
+  const profileImportConfirmDialog = document.querySelector("#profile-import-confirm-dialog");
+  if (profileImportConfirmDialog) {
+    if (state.profileImportConfirmOpen && !profileImportConfirmDialog.open) {
+      profileImportConfirmDialog.showModal();
+    }
+
+    profileImportConfirmDialog.addEventListener("close", () => {
+      if (state.profileImportConfirmOpen) {
+        state.profileImportConfirmOpen = false;
+        state.pendingProfileImport = null;
+        applyModalScrollLock();
+        render();
+      }
+    });
+  }
+
+  const scannerDialog = document.querySelector("#scanner-dialog");
+  if (scannerDialog) {
+    if (state.scannerOpen && !scannerDialog.open) {
+      scannerDialog.showModal();
+      window.requestAnimationFrame(() => {
+        startQrScanner().catch((error) => {
+          state.scannerState = "error";
+          state.scannerMessage = error?.message || "Kamera konnte nicht gestartet werden.";
+          render();
+        });
+      });
+    }
+
+    scannerDialog.addEventListener("close", () => {
+      if (state.scannerOpen) {
+        closeScannerDialog();
+      }
+    });
+  }
+
+  const syncStatusDialog = document.querySelector("#sync-status-dialog");
+  if (syncStatusDialog) {
+    if (state.syncStatusOpen && !syncStatusDialog.open) {
+      syncStatusDialog.showModal();
+    }
+
+    syncStatusDialog.addEventListener("close", () => {
+      if (state.syncStatusOpen && state.syncStatusState !== "running") {
+        closeSyncStatusDialog();
+      }
+    });
+  }
+
+  const resetConfirmDialog = document.querySelector("#reset-confirm-dialog");
+  if (resetConfirmDialog) {
+    if (state.resetConfirmOpen && !resetConfirmDialog.open) {
+      resetConfirmDialog.showModal();
+    }
+
+    resetConfirmDialog.addEventListener("close", () => {
+      if (state.resetConfirmOpen) {
+        state.resetConfirmOpen = false;
+        applyModalScrollLock();
+        render();
+      }
+    });
+  }
+
+  const resetFinalConfirmDialog = document.querySelector("#reset-final-confirm-dialog");
+  if (resetFinalConfirmDialog) {
+    if (state.resetFinalConfirmOpen && !resetFinalConfirmDialog.open) {
+      resetFinalConfirmDialog.showModal();
+    }
+
+    resetFinalConfirmDialog.addEventListener("close", () => {
+      if (state.resetFinalConfirmOpen) {
+        state.resetFinalConfirmOpen = false;
+        applyModalScrollLock();
+        render();
+      }
+    });
+  }
+
   settingsDialog?.querySelectorAll("button[id], input[id], select[id], textarea[id]").forEach((element) => {
     element.addEventListener("click", () => {
       state.settingsFocusId = element.id || "";
@@ -1197,6 +3106,66 @@ function bindEvents() {
       state.reportRange = button.dataset.reportRange;
       render();
     });
+  });
+
+  document.querySelectorAll("[data-feedback-question][data-feedback-value]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const questionId = Number(button.dataset.feedbackQuestion);
+      const value = Number(button.dataset.feedbackValue);
+      if (!questionId || !value || state.feedbackStatus === "sending") {
+        return;
+      }
+      state.feedbackAnswers = {
+        ...state.feedbackAnswers,
+        [questionId]: value,
+      };
+      state.feedbackStatus = "ready";
+      state.feedbackError = "";
+      persistState();
+      render();
+    });
+  });
+
+  document.querySelector("#submit-feedback-button")?.addEventListener("click", async () => {
+    if (state.feedbackStatus === "sending") {
+      return;
+    }
+
+    if (!feedbackReadyToSubmit()) {
+      state.feedbackStatus = "error";
+      state.feedbackError = "Bitte beantworte zuerst alle 5 Fragen.";
+      render();
+      return;
+    }
+
+    state.feedbackStatus = "sending";
+    state.feedbackError = "";
+    persistState();
+    render();
+
+    try {
+      await submitFeedbackResponse();
+      state.feedbackStatus = "success";
+      state.feedbackError = "";
+      if (state.activeFeedbackRound) {
+        state.activeFeedbackRound = {
+          ...state.activeFeedbackRound,
+          alreadyAnswered: true,
+          ballotToken: "",
+        };
+      }
+      state.feedbackAnswers = {};
+      persistState();
+      render();
+      runBackgroundStudentSync();
+    } catch (error) {
+      state.feedbackStatus = "error";
+      state.feedbackError = error?.message === "feedback-unvollstaendig"
+        ? "Bitte beantworte zuerst alle 5 Fragen."
+        : "Die Rückmeldung konnte gerade nicht gesendet werden.";
+      persistState();
+      render();
+    }
   });
 
   const instrumentSelect = document.querySelector("#instrument-select");
@@ -1262,6 +3231,64 @@ function bindEvents() {
     });
   }
 
+  const openQrScannerButton = document.querySelector("#open-qr-scanner");
+  if (openQrScannerButton) {
+    openQrScannerButton.addEventListener("click", () => {
+      openScannerDialog();
+    });
+  }
+
+  const restartQrScannerButton = document.querySelector("#restart-qr-scanner");
+  if (restartQrScannerButton) {
+    restartQrScannerButton.addEventListener("click", async () => {
+      try {
+        await startQrScanner();
+      } catch (error) {
+        state.scannerState = "error";
+        state.scannerMessage = error?.message || "Kamera konnte nicht neu gestartet werden.";
+        render();
+      }
+    });
+  }
+
+  const closeScannerButton = document.querySelector("#close-scanner");
+  if (closeScannerButton) {
+    closeScannerButton.addEventListener("click", () => {
+      document.querySelector("#scanner-dialog")?.close();
+    });
+  }
+
+  const scannerImageInput = document.querySelector("#scanner-image-input");
+  if (scannerImageInput) {
+    scannerImageInput.addEventListener("change", async (event) => {
+      const [file] = event.target.files || [];
+      if (!file) {
+        return;
+      }
+      try {
+        state.scannerState = "active";
+        state.scannerMessage = "QR-Code aus dem Bild wird gelesen...";
+        render();
+        await scanConnectionImageFile(file);
+      } catch (error) {
+        state.scannerState = "error";
+        state.scannerMessage = error?.message || "Das ausgewählte Bild konnte nicht gelesen werden.";
+        render();
+      } finally {
+        event.target.value = "";
+      }
+    });
+  }
+
+  const closeSyncStatusButton = document.querySelector("#close-sync-status");
+  if (closeSyncStatusButton) {
+    closeSyncStatusButton.addEventListener("click", () => {
+      if (state.syncStatusState !== "running") {
+        document.querySelector("#sync-status-dialog")?.close();
+      }
+    });
+  }
+
   const closeHelpButton = document.querySelector("#close-help");
   if (closeHelpButton) {
     closeHelpButton.addEventListener("click", () => {
@@ -1271,21 +3298,128 @@ function bindEvents() {
     });
   }
 
+  const cancelProfileImportButton = document.querySelector("#cancel-profile-import");
+  if (cancelProfileImportButton) {
+    cancelProfileImportButton.addEventListener("click", () => {
+      state.profileImportConfirmOpen = false;
+      state.pendingProfileImport = null;
+      applyModalScrollLock();
+      profileImportConfirmDialog?.close();
+    });
+  }
+
+  const confirmProfileImportButton = document.querySelector("#confirm-profile-import");
+  if (confirmProfileImportButton) {
+    confirmProfileImportButton.addEventListener("click", () => {
+      if (!state.pendingProfileImport) {
+        return;
+      }
+
+      applyProfilePackagePayload(state.pendingProfileImport);
+      state.celebrationText = `Profil ${state.profileName} wurde übernommen.`;
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
+      profileImportConfirmDialog?.close();
+    });
+  }
+
+  const openResetConfirmButton = document.querySelector("#open-reset-confirm");
+  if (openResetConfirmButton) {
+    openResetConfirmButton.addEventListener("click", () => {
+      state.resetConfirmOpen = true;
+      applyModalScrollLock();
+      render();
+    });
+  }
+
+  const cancelResetConfirmButton = document.querySelector("#cancel-reset-confirm");
+  if (cancelResetConfirmButton) {
+    cancelResetConfirmButton.addEventListener("click", () => {
+      state.resetConfirmOpen = false;
+      applyModalScrollLock();
+      resetConfirmDialog?.close();
+    });
+  }
+
+  const continueResetConfirmButton = document.querySelector("#continue-reset-confirm");
+  if (continueResetConfirmButton) {
+    continueResetConfirmButton.addEventListener("click", () => {
+      state.resetConfirmOpen = false;
+      state.resetFinalConfirmOpen = true;
+      applyModalScrollLock();
+      resetConfirmDialog?.close();
+      render();
+    });
+  }
+
+  const cancelFinalResetButton = document.querySelector("#cancel-final-reset");
+  if (cancelFinalResetButton) {
+    cancelFinalResetButton.addEventListener("click", () => {
+      state.resetFinalConfirmOpen = false;
+      applyModalScrollLock();
+      resetFinalConfirmDialog?.close();
+    });
+  }
+
+  const confirmFinalResetButton = document.querySelector("#confirm-final-reset");
+  if (confirmFinalResetButton) {
+    confirmFinalResetButton.addEventListener("click", () => {
+      resetStudentAppForTesting();
+      resetFinalConfirmDialog?.close();
+      state.celebrationText = "Alle lokalen Daten wurden gelöscht. Die App ist bereit für eine neue Kopplung.";
+      state.celebrate = true;
+      applyModalScrollLock();
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2400);
+    });
+  }
+
   const exportBackupButton = document.querySelector("#export-backup-button");
   if (exportBackupButton) {
     exportBackupButton.addEventListener("click", () => {
       downloadFile({
-        filename: `fleisstakt-backup-${createDateStamp()}.json`,
-        content: JSON.stringify(exportBackupPayload(), null, 2),
+        filename: createBackupFileName(),
+        content: createBackupFileContent(),
         mimeType: "application/json;charset=utf-8",
       });
-      state.celebrationText = "Backup exportiert.";
+      state.celebrationText = "Backup lokal gespeichert.";
       state.celebrate = true;
       render();
       window.setTimeout(() => {
         state.celebrate = false;
         render();
       }, 1800);
+    });
+  }
+
+  const moveDeviceButton = document.querySelector("#move-device-button");
+  if (moveDeviceButton) {
+    moveDeviceButton.addEventListener("click", async () => {
+      try {
+        await shareDeviceMoveBackup();
+        state.celebrationText = "Backup für Gerätewechsel geteilt.";
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          state.celebrationText = "Teilen wurde abgebrochen.";
+        } else if (error?.message === "datei-teilen-nicht-verfuegbar" || error?.message === "teilen-nicht-verfuegbar") {
+          state.celebrationText = "Datei-Teilen wird auf diesem Gerät nicht angeboten.";
+        } else {
+          state.celebrationText = "Gerätewechsel konnte nicht vorbereitet werden.";
+        }
+      }
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
     });
   }
 
@@ -1308,6 +3442,97 @@ function bindEvents() {
           state.celebrationText = "Backup konnte nicht importiert werden.";
         }
       }
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
+      event.target.value = "";
+    });
+  }
+
+  const profilePackageInput = document.querySelector("#profile-package-input");
+  if (profilePackageInput) {
+    profilePackageInput.addEventListener("change", async (event) => {
+      const [file] = event.target.files || [];
+      if (!file) {
+        return;
+      }
+
+      try {
+        const result = await importProfilePackage(file);
+        if (result === "confirm") {
+          event.target.value = "";
+          return;
+        }
+        state.celebrationText = `Profil ${state.profileName} importiert.`;
+      } catch (error) {
+        if (error?.message === "ungueltige-pruefsumme") {
+          state.celebrationText = "Profilpaket ungültig oder verändert.";
+        } else if (error?.message === "ungueltiges-profilpaket") {
+          state.celebrationText = "Profilpaket unvollständig oder nicht lesbar.";
+        } else {
+          state.celebrationText = error?.message || "Profilpaket konnte nicht importiert werden.";
+        }
+      }
+
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
+      event.target.value = "";
+    });
+  }
+
+  const connectStudentIdInput = document.querySelector("#connect-student-id");
+  if (connectStudentIdInput) {
+    connectStudentIdInput.addEventListener("input", (event) => {
+      state.connectStudentIdDraft = `${event.target.value || ""}`.trim();
+    });
+  }
+
+  const connectCodeInput = document.querySelector("#connect-code");
+  if (connectCodeInput) {
+    connectCodeInput.addEventListener("input", (event) => {
+      const normalized = `${event.target.value || ""}`.replace(/\D+/g, "").slice(0, 8);
+      state.connectCodeDraft = normalized;
+      event.target.value = normalized;
+    });
+  }
+
+  const connectProfileButton = document.querySelector("#connect-profile-button");
+  if (connectProfileButton) {
+    connectProfileButton.addEventListener("click", async () => {
+      const connectStudentId = document.querySelector("#connect-student-id")?.value?.trim() || "";
+      const connectCode = document.querySelector("#connect-code")?.value?.trim() || "";
+      await connectProfileFlow(connectStudentId, connectCode);
+    });
+  }
+
+  const cardPackageInput = document.querySelector("#card-package-input");
+  if (cardPackageInput) {
+    cardPackageInput.addEventListener("change", async (event) => {
+      const [file] = event.target.files || [];
+      if (!file) {
+        return;
+      }
+
+      try {
+        await importCardPackage(file);
+        state.celebrationText = "Kartenpaket importiert.";
+      } catch (error) {
+        if (error?.message === "ungueltige-pruefsumme") {
+          state.celebrationText = "Kartenpaket ungültig oder verändert.";
+        } else if (error?.message === "falsche-lernenden-id") {
+          state.celebrationText = "Dieses Kartenpaket ist für eine andere Lernenden-ID gedacht.";
+        } else {
+          state.celebrationText = "Kartenpaket konnte nicht importiert werden.";
+        }
+      }
+
       state.celebrate = true;
       render();
       window.setTimeout(() => {
@@ -1353,37 +3578,14 @@ function bindEvents() {
   const checkUpdatesButton = document.querySelector("#check-updates-button");
   if (checkUpdatesButton) {
     checkUpdatesButton.addEventListener("click", async () => {
-      if (!serviceWorkerRegistration) {
-        state.updateState = "error";
-        state.updateStatus = "Update-Prüfung auf diesem Gerät nicht verfügbar.";
-        render();
-        return;
-      }
-
-      state.updateState = "checking";
-      state.updateStatus = "Suche nach Updates...";
-      render();
-      try {
-        await serviceWorkerRegistration.update();
-        window.setTimeout(() => {
-          if (!state.updateReady) {
-            state.updateState = "ok";
-            state.updateStatus = "Keine neue Version gefunden.";
-            render();
-          }
-        }, 1200);
-      } catch {
-        state.updateState = "error";
-        state.updateStatus = "Update-Prüfung fehlgeschlagen.";
-        render();
-      }
+      await checkForUpdates();
     });
   }
 
   const reloadAppButton = document.querySelector("#reload-app-button");
   if (reloadAppButton) {
-    reloadAppButton.addEventListener("click", () => {
-      window.location.reload();
+    reloadAppButton.addEventListener("click", async () => {
+      await performAppReload();
     });
   }
 
@@ -1395,6 +3597,20 @@ function bindEvents() {
       if (valueEl) {
         valueEl.textContent = `${nextGoal} Minuten`;
       }
+    });
+  }
+
+  const activeProfileSelect = document.querySelector("#active-profile-select");
+  if (activeProfileSelect) {
+    activeProfileSelect.addEventListener("change", (event) => {
+      activateStoredProfile(event.target.value);
+      state.celebrationText = "Profil gewechselt.";
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 1800);
     });
   }
 
@@ -1416,22 +3632,84 @@ function bindEvents() {
     });
   }
 
-  const exportReportPackageButton = document.querySelector("#export-report-package");
-  if (exportReportPackageButton) {
-    exportReportPackageButton.addEventListener("click", () => {
-      downloadFile({
-        filename: createReportPackageFileName(),
-        content: JSON.stringify(exportReportPackagePayload(), null, 2),
-        mimeType: "application/json;charset=utf-8",
-      });
-      state.celebrationText = "FleißTakt-Berichtspaket exportiert.";
+  const handleStudentSync = async () => {
+    if (studentSyncInProgress) {
+      state.celebrationText = "Server-Sync läuft bereits im Hintergrund.";
       state.celebrate = true;
       render();
       window.setTimeout(() => {
         state.celebrate = false;
         render();
       }, 1800);
-    });
+      return;
+    }
+    studentSyncInProgress = true;
+    openSyncStatus("Mit Server synchronisieren", [
+      { id: "upload", label: "Aktuellen Bericht zum Server senden" },
+      { id: "download", label: "Profil und Ziel-Kärtchen vom Server laden" },
+    ]);
+
+    try {
+      updateSyncStatus("upload", "running", "Bericht wird an den FleißTakt-Server gesendet...");
+      const { uploadResult, snapshot } = await syncStudentAppWithServer();
+      updateSyncStatus("upload", "done", "Bericht gespeichert. Jetzt werden Profil und Ziel-Kärtchen geladen...");
+      updateSyncStatus("download", "running", "Aktueller Serverstand wird auf das Gerät übernommen...");
+      updateSyncStatus("download", "done", snapshot?.lastImportSummary || "Profil und Ziel-Kärtchen wurden aktualisiert.");
+      finishSyncStatus(
+        "success",
+        uploadResult?.status === "duplicate_ignored"
+          ? (snapshot?.lastImportSummary || "Server-Sync abgeschlossen.")
+          : "Bericht gesendet und Ziel-Kärtchen synchronisiert.",
+        true,
+      );
+      state.celebrationText = uploadResult?.status === "duplicate_ignored"
+        ? (snapshot?.lastImportSummary || "Server-Sync abgeschlossen.")
+        : "Bericht gesendet und Ziel-Kärtchen synchronisiert.";
+      state.syncStatusNote = `Zuletzt mit dem Server synchronisiert: ${new Date().toLocaleString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}.`;
+    } catch (error) {
+      const runningStep = state.syncStatusSteps.find((step) => step.state === "running");
+      if (runningStep) {
+        updateSyncStatus(runningStep.id, "error");
+      }
+      if (error?.message === "fehlendes-upload-token") {
+        state.celebrationText = "Bitte dieses Gerät zuerst mit einer Lehrkraft verbinden.";
+        finishSyncStatus("error", "Bitte dieses Gerät zuerst mit einer Lehrkraft verbinden.");
+      } else if (error?.message && !error.message.includes("upload-fehlgeschlagen") && !error.message.includes("sync-fehlgeschlagen")) {
+        state.celebrationText = error.message;
+        finishSyncStatus("error", error.message);
+      } else {
+        state.celebrationText = "Synchronisation mit dem Server gerade nicht möglich.";
+        finishSyncStatus("error", "Synchronisation mit dem Server gerade nicht möglich.");
+      }
+      state.syncStatusNote = "Manueller Server-Sync fehlgeschlagen. Bitte später erneut versuchen.";
+    }
+
+    state.celebrate = true;
+    persistState();
+    render();
+    window.setTimeout(() => {
+      state.celebrate = false;
+      render();
+    }, 2200);
+    studentSyncInProgress = false;
+    if (studentAutoSyncPending) {
+      void runBackgroundStudentSync();
+    }
+  };
+
+  const studentSyncButton = document.querySelector("#student-sync-button");
+  if (studentSyncButton) {
+    studentSyncButton.addEventListener("click", handleStudentSync);
+  }
+
+  const profileSyncButton = document.querySelector("#profile-sync-button");
+  if (profileSyncButton) {
+    profileSyncButton.addEventListener("click", handleStudentSync);
   }
 
   const shareSummaryButton = document.querySelector("#share-summary");
@@ -1579,6 +3857,9 @@ function bindEvents() {
       state.celebrate = true;
       state.activeScreen = "today";
       render();
+      if (state.syncUploadToken) {
+        void runBackgroundStudentSync();
+      }
       window.setTimeout(() => {
         state.celebrate = false;
         render();

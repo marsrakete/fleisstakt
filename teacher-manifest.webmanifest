@@ -1,8 +1,8 @@
 {
   "id": "/fleisstakt/teacher",
-  "name": "FleißTakt Lehrkraft",
-  "short_name": "Lehrkraft",
-  "description": "Lehrkraft-PWA für FleißTakt mit Klassenübersicht, Import und Berichtspaketen.",
+  "name": "FleißTakt Lehrkräfte",
+  "short_name": "Lehrkräfte",
+  "description": "Lehrkräfte-PWA für FleißTakt mit Klassenübersicht, Import und Berichtspaketen.",
   "start_url": "./teacher.html",
   "scope": "./",
   "display": "standalone",
