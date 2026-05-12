@@ -416,7 +416,17 @@ class FleissTakt_Sync_Bridge_Rest {
       ], 400);
     }
 
-    $result = $this->repository->sync_teacher_cards($teacher, $cards);
+    try {
+      $result = $this->repository->sync_teacher_cards($teacher, $cards);
+    } catch (Throwable $exception) {
+      $message = sanitize_text_field($exception->getMessage());
+      return $this->error_response(
+        $message !== ''
+          ? 'Kärtchen konnten nicht mit dem Server synchronisiert werden. ' . $message
+          : 'Kärtchen konnten nicht mit dem Server synchronisiert werden.',
+        500
+      );
+    }
 
     return new WP_REST_Response([
       'ok' => true,

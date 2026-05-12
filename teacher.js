@@ -191,10 +191,14 @@ function defaultTeacherState() {
 }
 
 function applyTeacherModalScrollLock() {
-  const isLocked = teacherState.settingsOpen || teacherState.profileShareOpen || teacherState.syncProgressOpen;
+  const isLocked = isAnyTeacherModalOpen();
   document.documentElement.style.overflow = isLocked ? "hidden" : "";
   document.body.style.overflow = isLocked ? "hidden" : "";
   document.body.classList.toggle("is-modal-open", isLocked);
+}
+
+function isAnyTeacherModalOpen() {
+  return teacherState.settingsOpen || teacherState.profileShareOpen || teacherState.syncProgressOpen;
 }
 
 function normalizeVersionInfo(value = {}) {
@@ -301,10 +305,15 @@ async function runQueuedTeacherAutoSync() {
       }
 
       const snapshot = await fetchTeacherSyncSnapshot();
-      importTeacherSyncSnapshot(snapshot);
+      const importResult = importTeacherSyncSnapshot(snapshot, { preserveLocalCardsOnEmpty: nextRun.cards });
+      if (importResult.preservedLocalCards) {
+        teacherState.toast = "Der Server hat direkt nach dem Kärtchen-Sync noch keine Karten zurückgemeldet. Die lokale Bibliothek bleibt deshalb vorerst erhalten.";
+      }
     }
 
-    teacherState.statusLine = "Änderungen gespeichert und mit dem Server synchronisiert.";
+    if (!teacherState.toast) {
+      teacherState.statusLine = "Änderungen gespeichert und mit dem Server synchronisiert.";
+    }
   } catch (error) {
     teacherState.statusLine = "Änderungen gespeichert. Server-Sync ausstehend.";
     teacherState.toast = error?.message || "Automatischer Server-Sync fehlgeschlagen. Bitte Alles synchronisieren.";
@@ -1353,7 +1362,16 @@ async function pushTeacherRosterToServer() {
   return data;
 }
 
-function importTeacherSyncSnapshot(snapshot) {
+function importTeacherSyncSnapshot(snapshot, options = {}) {
+  const { preserveLocalCardsOnEmpty = false } = options;
+  const previousCards = Array.isArray(teacherState.cardLibrary) ? teacherState.cardLibrary : [];
+  const incomingCards = Array.isArray(snapshot.cardLibrary)
+    ? snapshot.cardLibrary.map(normalizeTeacherCard)
+    : [];
+  const preservedLocalCards = preserveLocalCardsOnEmpty
+    && previousCards.length > 0
+    && incomingCards.length === 0;
+
   teacherState.practiceCategories = normalizePracticeCategories(snapshot.categories);
   teacherState.classes = Array.isArray(snapshot.classes)
     ? snapshot.classes
@@ -1364,15 +1382,17 @@ function importTeacherSyncSnapshot(snapshot) {
   teacherState.students = Array.isArray(snapshot.students)
     ? snapshot.students.map(normalizeTeacherStudent)
     : [];
-  teacherState.cardLibrary = Array.isArray(snapshot.cardLibrary)
-    ? snapshot.cardLibrary.map(normalizeTeacherCard)
-    : [];
+  teacherState.cardLibrary = preservedLocalCards ? previousCards : incomingCards;
   teacherState.feedbackRounds = Array.isArray(snapshot.feedbackRounds)
     ? snapshot.feedbackRounds
     : [];
   teacherState.syncTeacherLabel = snapshot.teacher?.displayName || teacherState.syncTeacherLabel;
-  teacherState.lastImportSummary = snapshot.lastImportSummary || "Serverdaten übernommen.";
-  teacherState.statusLine = snapshot.statusLine || "Mit dem FleißTakt-Server synchronisiert.";
+  teacherState.lastImportSummary = preservedLocalCards
+    ? "Lokale Kärtchenbibliothek beibehalten, weil der Server nach dem Sync noch keine Kärtchen zurückgemeldet hat."
+    : (snapshot.lastImportSummary || "Serverdaten übernommen.");
+  teacherState.statusLine = preservedLocalCards
+    ? "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten."
+    : (snapshot.statusLine || "Mit dem FleißTakt-Server synchronisiert.");
   teacherState.selectedClassId = teacherState.selectedClassId === "all"
     ? "all"
     : (teacherState.classes.find((item) => item.id === teacherState.selectedClassId)?.id || "all");
@@ -1386,6 +1406,9 @@ function importTeacherSyncSnapshot(snapshot) {
     || teacherState.feedbackRounds[0]?.roundId
     || "";
   persistTeacherState();
+  return {
+    preservedLocalCards,
+  };
 }
 
 function exportTeacherBackupPayload() {
@@ -2597,6 +2620,7 @@ function renderCardsWorkspace(cards) {
                 <option value="">Kategorie wählen</option>
                 ${categoryRuleOptions}
               </select>
+              <small>Nur bei Zielbedingung <strong>Kategorie genutzt</strong> relevant.</small>
             </label>
             <div></div>
           </div>
@@ -2809,7 +2833,7 @@ function renderTeacherApp() {
         ${renderMainWorkspace(students, cards)}
       </main>
 
-        ${teacherState.toast ? `<div class="teacher-toast" role="status">${escapeHtml(teacherState.toast)}</div>` : ""}
+        ${teacherState.toast && !isAnyTeacherModalOpen() ? `<div class="teacher-toast" role="status">${escapeHtml(teacherState.toast)}</div>` : ""}
 
         <dialog class="teacher-settings-dialog" id="teacher-settings-dialog">
           <form method="dialog" class="teacher-settings-sheet" tabindex="-1">
@@ -2820,15 +2844,7 @@ function renderTeacherApp() {
             </div>
           </div>
 
-          <section class="teacher-settings-block">
-            <h3>App</h3>
-            <p class="teacher-settings-copy">Version ${escapeHtml(teacherState.versionInfo.appVersion)} · Cache ${escapeHtml(teacherState.versionInfo.cacheVersion)}</p>
-            <div class="teacher-update-actions">
-              <button class="teacher-button" type="button" id="install-teacher-app">
-                ${teacherState.installReady ? "Lehrkräfte-App installieren" : "Installation prüfen"}
-              </button>
-            </div>
-          </section>
+          ${teacherState.toast ? `<p class="teacher-modal-toast" role="status">${escapeHtml(teacherState.toast)}</p>` : ""}
 
           <section class="teacher-settings-block">
             <h3>Sync</h3>
@@ -2889,6 +2905,7 @@ function renderTeacherApp() {
               </div>
               <button class="teacher-button" type="button" id="close-profile-share-dialog">Schließen</button>
             </div>
+            ${teacherState.toast ? `<p class="teacher-modal-toast" role="status">${escapeHtml(teacherState.toast)}</p>` : ""}
             <div class="teacher-share-qr-wrap">
               ${
                 teacherState.profileShareUrl
@@ -2921,6 +2938,7 @@ function renderTeacherApp() {
               </div>
             </div>
             <section class="teacher-settings-block">
+              ${teacherState.toast ? `<p class="teacher-modal-toast teacher-sync-progress-toast" role="status">${escapeHtml(teacherState.toast)}</p>` : ""}
               <div class="teacher-sync-progress-list">
                 ${
                   teacherState.syncProgressSteps.map((step) => `
@@ -3015,7 +3033,7 @@ function bindTeacherEvents() {
 
   document.querySelector("#open-teacher-settings")?.addEventListener("click", () => {
     teacherState.settingsOpen = true;
-    teacherState.settingsFocusId = "install-teacher-app";
+    teacherState.settingsFocusId = "check-teacher-updates";
     applyTeacherModalScrollLock();
     renderTeacherApp();
   });
@@ -3188,11 +3206,17 @@ function bindTeacherEvents() {
 
       updateSyncProgress("snapshot", "running", "Aktueller Serverstand wird geladen...");
       const snapshot = await fetchTeacherSyncSnapshot();
-      importTeacherSyncSnapshot(snapshot);
+      const importResult = importTeacherSyncSnapshot(snapshot, { preserveLocalCardsOnEmpty: true });
       updateSyncProgress("snapshot", "done", "Alle Bereiche wurden erfolgreich synchronisiert.");
-      finishSyncProgress("success", "Stammdaten, Kärtchen und der aktuelle Serverstand sind jetzt synchron.");
-      teacherState.statusLine = "Alle Bereiche mit dem Server synchronisiert.";
-      teacherState.toast = "Stammdaten, Kärtchen und Serverstand sind jetzt synchron.";
+      if (importResult.preservedLocalCards) {
+        finishSyncProgress("success", "Der Serverstand wurde geladen. Die lokale Kärtchenbibliothek bleibt vorsorglich erhalten, weil der Server noch keine Karten zurückgemeldet hat.");
+        teacherState.statusLine = "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten.";
+        teacherState.toast = "Der Server hat direkt nach dem Kärtchen-Sync noch keine Karten zurückgemeldet. Die lokale Bibliothek bleibt deshalb vorerst erhalten.";
+      } else {
+        finishSyncProgress("success", "Stammdaten, Kärtchen und der aktuelle Serverstand sind jetzt synchron.");
+        teacherState.statusLine = "Alle Bereiche mit dem Server synchronisiert.";
+        teacherState.toast = "Stammdaten, Kärtchen und Serverstand sind jetzt synchron.";
+      }
     } catch (error) {
       const runningStep = teacherState.syncProgressSteps.find((step) => step.state === "running");
       if (runningStep) {
@@ -3253,27 +3277,6 @@ function bindTeacherEvents() {
 
   document.querySelector("#reload-teacher-app")?.addEventListener("click", async () => {
     await performTeacherAppReload();
-  });
-
-  document.querySelector("#install-teacher-app")?.addEventListener("click", async () => {
-    if (!teacherState.installPrompt) {
-      teacherState.statusLine = "Installation auf diesem Gerät nicht verfügbar.";
-      teacherState.toast = "Die Installation wird auf diesem Gerät gerade nicht angeboten.";
-      renderTeacherApp();
-      return;
-    }
-
-    const prompt = teacherState.installPrompt;
-    prompt.prompt();
-    try {
-      await prompt.userChoice;
-    } catch {
-      // ignore aborted install
-    }
-    teacherState.installPrompt = null;
-    teacherState.installReady = false;
-    teacherState.statusLine = "Installationsstatus geprüft.";
-    renderTeacherApp();
   });
 
   document.querySelector("#sidebar-toggle")?.addEventListener("click", () => {
@@ -3861,9 +3864,9 @@ function bindTeacherEvents() {
     }
   });
 
-  if (teacherState.toast) {
+  if (teacherState.toast && !isAnyTeacherModalOpen()) {
     window.setTimeout(() => {
-      if (!teacherState.toast) {
+      if (!teacherState.toast || isAnyTeacherModalOpen()) {
         return;
       }
       teacherState.toast = "";

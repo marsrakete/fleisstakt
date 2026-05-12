@@ -1,6 +1,6 @@
 # FleißTakt Sync Bridge
 
-Aktuelle Plugin-Version: `0.11.0`
+Aktuelle Plugin-Version: `0.24.3`
 
 WordPress-Plugin für zentrale FleißTakt-Verwaltung mit:
 

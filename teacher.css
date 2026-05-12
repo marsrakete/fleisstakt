@@ -205,7 +205,9 @@ button {
 .teacher-settings-sheet {
   width: min(100vw - 24px, 38rem);
   max-height: min(88vh, 50rem);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   padding: 22px;
   border-radius: 28px;
   background: rgba(255, 250, 242, 0.98);
@@ -332,6 +334,19 @@ button {
 .teacher-sync-progress-item.is-error {
   border-color: rgba(166, 61, 47, 0.24);
   background: rgba(166, 61, 47, 0.08);
+}
+
+.teacher-modal-toast {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #1f2a36;
+  color: #fffaf3;
+  box-shadow: 0 12px 24px rgba(31, 42, 54, 0.16);
+}
+
+.teacher-sync-progress-toast {
+  margin-bottom: 12px;
 }
 
 .teacher-settings-close {

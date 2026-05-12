@@ -35,7 +35,7 @@ WordPress ist hier also nicht das Produkt selbst, sondern die robuste und niedri
 
 ## Wie die Kommunikation jetzt funktioniert
 
-FleißTakt arbeitet nicht mehr nur mit manuell ausgetauschten Berichtspaketen. Der Alltag läuft jetzt primär über den Server-Sync mit dem WordPress-Plugin.
+FleißTakt läuft im Alltag über den Server-Sync mit dem WordPress-Plugin.
 
 ```mermaid
 flowchart LR
@@ -51,8 +51,6 @@ Im laufenden Betrieb bedeutet das:
 - Die Lernenden-App lädt Profil, Ziel-Kärtchen und Server-Stand wieder nach.
 - Lehrkräfte synchronisieren Klassen, Lernende, Profile und Kärtchen mit demselben Server.
 - Das WordPress-Plugin ist die gemeinsame Wahrheit für Unterrichtsbeziehungen und Zuweisungen.
-
-Manuelle Exporte bleiben nur noch als Fallback oder für Sonderfälle sinnvoll, nicht mehr als Hauptweg.
 
 ## Mandantenfähigkeit
 
@@ -185,7 +183,7 @@ Der empfohlene Ablauf für Lehrkräfte ist jetzt:
 Wichtig dabei:
 
 - Eine Person kann mehrere Profile haben.
-- Die Verteilung an Lernende läuft nicht mehr primär über Berichtspakete, sondern über die Server-Verbindung.
+- Die Verteilung an Lernende läuft über die Server-Verbindung.
 - Die Lehrkräfte-App ist die tägliche Arbeitsoberfläche, das Plugin die zentrale Administration und Datenhaltung.
 
 ## Onboarding für Lernende
@@ -245,7 +243,6 @@ FleißTakt bietet weiterhin Berichte für Woche, Monat und Gesamtzeitraum. Diese
 Im neuen Zielbild gilt aber:
 
 - Für die tägliche Zusammenarbeit ist der Server-Sync der Hauptweg.
-- Manuelle Berichtspakete sind nur noch ein Fallback.
 - Die Lehrkräfte-App bekommt ihre Sicht primär über die WordPress-Zentrale.
 
 ## Ziel im Unterricht

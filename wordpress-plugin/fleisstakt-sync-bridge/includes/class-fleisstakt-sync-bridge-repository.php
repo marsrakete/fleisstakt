@@ -1249,12 +1249,12 @@ class FleissTakt_Sync_Bridge_Repository {
           continue;
         }
 
-        $card_uuid = sanitize_text_field((string) ($card['id'] ?? $card['cardUuid'] ?? ''));
-        if ($card_uuid === '') {
+        $requested_card_uuid = sanitize_text_field((string) ($card['id'] ?? $card['cardUuid'] ?? ''));
+        if ($requested_card_uuid === '') {
           continue;
         }
 
-        $incoming_ids[] = $card_uuid;
+        $card_uuid = $requested_card_uuid;
         $existing = $this->wpdb->get_row(
           $this->wpdb->prepare(
             "SELECT id, created_at FROM {$this->cards_table} WHERE card_uuid = %s AND teacher_id = %d",
@@ -1263,9 +1263,37 @@ class FleissTakt_Sync_Bridge_Repository {
           ),
           ARRAY_A
         );
+        if (!$existing) {
+          $existing_foreign = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+              "SELECT id, teacher_id FROM {$this->cards_table} WHERE card_uuid = %s LIMIT 1",
+              $card_uuid
+            ),
+            ARRAY_A
+          );
+
+          if ($existing_foreign && (int) ($existing_foreign['teacher_id'] ?? 0) !== $teacher_id) {
+            $card_uuid = $this->build_scoped_card_uuid($teacher_id, $requested_card_uuid);
+            $existing = $this->wpdb->get_row(
+              $this->wpdb->prepare(
+                "SELECT id, created_at FROM {$this->cards_table} WHERE card_uuid = %s AND teacher_id = %d",
+                $card_uuid,
+                $teacher_id
+              ),
+              ARRAY_A
+            );
+          }
+        }
+
+        $incoming_ids[] = $card_uuid;
 
         $rule = is_array($card['rule'] ?? null) ? $card['rule'] : [];
+        $assignment = is_array($card['assignment'] ?? null) ? $card['assignment'] : [];
         $rule_type = sanitize_text_field((string) ($rule['type'] ?? 'entriesCountAtLeast'));
+        $assignment_type = sanitize_text_field((string) ($assignment['type'] ?? 'all'));
+        if (!in_array($assignment_type, ['all', 'class', 'student'], true)) {
+          $assignment_type = 'all';
+        }
         $payload = [
           'teacher_id' => $teacher_id,
           'title' => sanitize_text_field((string) ($card['title'] ?? 'Neues Kärtchen')),
@@ -1277,10 +1305,8 @@ class FleissTakt_Sync_Bridge_Repository {
           'rule_meta' => $this->encode_rule_meta([
             'category' => sanitize_text_field((string) ($rule['category'] ?? '')),
           ]),
-          'assignment_type' => in_array(($card['assignment']['type'] ?? 'all'), ['all', 'class', 'student'], true)
-            ? sanitize_text_field((string) $card['assignment']['type'])
-            : 'all',
-          'assignment_target' => sanitize_text_field((string) ($card['assignment']['targetId'] ?? '')),
+          'assignment_type' => $assignment_type,
+          'assignment_target' => sanitize_text_field((string) ($assignment['targetId'] ?? '')),
           'accent' => sanitize_text_field((string) ($card['accent'] ?? 'gold')),
           'symbol' => sanitize_text_field((string) ($card['symbol'] ?? '✦')),
           'rarity' => sanitize_text_field((string) ($card['rarity'] ?? 'Basis')),
@@ -1294,7 +1320,7 @@ class FleissTakt_Sync_Bridge_Repository {
               $this->cards_table,
               $payload,
               ['id' => (int) $existing['id']],
-              ['%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s'],
+              ['%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
               ['%d']
             ),
             'Kärtchen konnte nicht aktualisiert werden.'
@@ -1328,41 +1354,49 @@ class FleissTakt_Sync_Bridge_Repository {
         );
       }
 
+      $incoming_ids = array_values(array_unique($incoming_ids));
+      $stale_card_ids = [];
+
       if ($incoming_ids) {
-        $incoming_ids = array_values(array_unique($incoming_ids));
         $placeholders = implode(',', array_fill(0, count($incoming_ids), '%s'));
+        $stale_card_ids = $this->wpdb->get_col(
+          $this->wpdb->prepare(
+            "SELECT id
+             FROM {$this->cards_table}
+             WHERE teacher_id = %d AND card_uuid NOT IN ($placeholders)",
+            array_merge([$teacher_id], $incoming_ids)
+          )
+        ) ?: [];
+      } else {
+        $stale_card_ids = $this->wpdb->get_col(
+          $this->wpdb->prepare(
+            "SELECT id
+             FROM {$this->cards_table}
+             WHERE teacher_id = %d",
+            $teacher_id
+          )
+        ) ?: [];
+      }
+
+      $stale_card_ids = array_values(array_filter(array_map('intval', $stale_card_ids)));
+      if ($stale_card_ids) {
+        $stale_placeholders = implode(',', array_fill(0, count($stale_card_ids), '%d'));
         $delete_awards_query = $this->wpdb->prepare(
-          "DELETE a FROM {$this->card_awards_table} a
-           INNER JOIN {$this->cards_table} c ON c.id = a.card_id
-           WHERE c.teacher_id = %d AND c.card_uuid NOT IN ($placeholders)",
-          array_merge([$teacher_id], $incoming_ids)
+          "DELETE FROM {$this->card_awards_table} WHERE card_id IN ($stale_placeholders)",
+          $stale_card_ids
         );
         $this->assert_db_write_success(
           $this->wpdb->query($delete_awards_query),
           'Veraltete Kärtchen-Verleihungen konnten nicht entfernt werden.'
         );
-        $query = $this->wpdb->prepare(
-          "DELETE FROM {$this->cards_table} WHERE teacher_id = %d AND card_uuid NOT IN ($placeholders)",
-          array_merge([$teacher_id], $incoming_ids)
+
+        $delete_cards_query = $this->wpdb->prepare(
+          "DELETE FROM {$this->cards_table} WHERE id IN ($stale_placeholders)",
+          $stale_card_ids
         );
         $this->assert_db_write_success(
-          $this->wpdb->query($query),
+          $this->wpdb->query($delete_cards_query),
           'Veraltete Kärtchen konnten nicht entfernt werden.'
-        );
-      } else {
-        $delete_awards_query = $this->wpdb->prepare(
-          "DELETE a FROM {$this->card_awards_table} a
-           INNER JOIN {$this->cards_table} c ON c.id = a.card_id
-           WHERE c.teacher_id = %d",
-          $teacher_id
-        );
-        $this->assert_db_write_success(
-          $this->wpdb->query($delete_awards_query),
-          'Kärtchen-Verleihungen konnten nicht entfernt werden.'
-        );
-        $this->assert_db_write_success(
-          $this->wpdb->delete($this->cards_table, ['teacher_id' => $teacher_id], ['%d']),
-          'Kärtchen konnten nicht entfernt werden.'
         );
       }
 
@@ -2461,6 +2495,15 @@ class FleissTakt_Sync_Bridge_Repository {
     ]);
 
     return 'report-' . substr(hash('sha256', $base), 0, 24);
+  }
+
+  private function build_scoped_card_uuid(int $teacher_id, string $card_uuid): string {
+    $normalized = sanitize_key($card_uuid);
+    if ($normalized === '') {
+      $normalized = 'karte';
+    }
+
+    return 'teacher-' . $teacher_id . '-' . $normalized;
   }
 
   private function generate_uuid(string $prefix): string {
