@@ -128,6 +128,7 @@ class FleissTakt_Sync_Bridge_Admin {
           'profile_label' => sanitize_text_field((string) ($_POST['profile_label'] ?? '')),
           'goal_minutes' => (int) ($_POST['goal_minutes'] ?? 15),
           'status' => sanitize_text_field((string) ($_POST['status'] ?? 'active')),
+          'camera_debug_enabled' => !empty($_POST['camera_debug_enabled']),
           'regenerate_upload_token' => !empty($_POST['regenerate_upload_token']),
         ];
         if ($id) {
@@ -676,6 +677,7 @@ class FleissTakt_Sync_Bridge_Admin {
     );
     $this->render_number_row('Tagesziel in Minuten', 'goal_minutes', (int) ($edit_profile['goal_minutes'] ?? 15), 5, 240);
     $this->render_select_row('Status', 'status', ['active' => 'Aktiv', 'inactive' => 'Inaktiv'], $edit_profile['status'] ?? 'active');
+    echo '<tr><th>Kamera-Debug</th><td><label><input type="checkbox" name="camera_debug_enabled" value="1"' . checked(!empty($edit_profile['camera_debug_enabled']), true, false) . ' /> Scanner-Debug in der Lernenden-App für diesen Unterricht anzeigen.</label><p class="description">Hilfreich für Kamera- und QR-Probleme. Die Debug-Anzeige erscheint nur bei diesem Unterricht.</p></td></tr>';
     echo '<tr><th>Kopplung dieses Unterrichts zurücksetzen</th><td><label><input type="checkbox" name="regenerate_upload_token" value="1" /> Nur im Ausnahmefall setzen, wenn dieser Unterricht auf Geräten neu gekoppelt werden soll.</label><p class="description">Dabei wird intern ein neuer technischer Schlüssel für die Serverkopplung erzeugt. Danach sollten Lernenden-ID und Verbindungscode erneut über die Lehrkräfte-App weitergegeben werden.</p></td></tr>';
     echo '</tbody></table>';
     submit_button($edit_profile ? 'Unterricht aktualisieren' : 'Unterricht anlegen');

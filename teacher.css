@@ -14,6 +14,8 @@
   --accent: #f26f3d;
   --accent-deep: #c85831;
   --accent-wash: rgba(242, 111, 61, 0.12);
+  --selection-wash: rgba(66, 94, 128, 0.1);
+  --selection-line: rgba(66, 94, 128, 0.24);
   --shadow: 0 18px 42px rgba(73, 50, 30, 0.12);
 }
 
@@ -173,10 +175,10 @@ button {
   min-height: 46px;
   padding: 10px 14px;
   border-radius: 14px;
-  background: linear-gradient(180deg, #f4814f, var(--accent));
-  color: #fffaf3;
-  border: 1px solid rgba(200, 88, 49, 0.4);
-  box-shadow: 0 10px 24px rgba(216, 91, 46, 0.16);
+  background: linear-gradient(180deg, rgba(250, 229, 214, 0.98), rgba(245, 213, 192, 0.98));
+  color: var(--accent-deep);
+  border: 1px solid rgba(210, 128, 92, 0.28);
+  box-shadow: 0 4px 12px rgba(216, 91, 46, 0.08);
   display: inline-grid;
   place-items: center;
 }
@@ -191,8 +193,8 @@ button {
 }
 
 .teacher-button-primary {
-  background: linear-gradient(180deg, #f4814f, var(--accent));
-  color: #fffaf3;
+  background: linear-gradient(180deg, rgba(250, 229, 214, 0.98), rgba(245, 213, 192, 0.98));
+  color: var(--accent-deep);
 }
 
 .teacher-button-danger {
@@ -202,9 +204,9 @@ button {
 }
 
 .teacher-button-subtle {
-  background: linear-gradient(180deg, #f4814f, var(--accent));
-  color: #fffaf3;
-  border-color: rgba(200, 88, 49, 0.4);
+  background: linear-gradient(180deg, rgba(250, 229, 214, 0.98), rgba(245, 213, 192, 0.98));
+  color: var(--accent-deep);
+  border-color: rgba(210, 128, 92, 0.28);
 }
 
 .teacher-settings-dialog[open] {
@@ -539,8 +541,8 @@ button {
 }
 
 .workspace-button.is-active {
-  background: var(--accent-wash);
-  border-color: rgba(242, 111, 61, 0.3);
+  background: var(--selection-wash);
+  border-color: var(--selection-line);
 }
 
 .workspace-button strong,
@@ -696,8 +698,8 @@ button {
 .student-row.is-active,
 .filter-chip.is-active,
 .card-library-row.is-active {
-  background: var(--accent-wash);
-  border-color: rgba(242, 111, 61, 0.3);
+  background: var(--selection-wash);
+  border-color: var(--selection-line);
 }
 
 .class-form {
@@ -874,6 +876,15 @@ button {
   align-content: start;
 }
 
+#student-form {
+  display: grid;
+  gap: 12px;
+}
+
+#student-form label {
+  gap: 4px;
+}
+
 .card-editor-form label,
 .card-editor-grid label {
   display: grid;
@@ -891,6 +902,7 @@ button {
 
 .teacher-inline-actions-emphasis {
   grid-template-columns: minmax(0, 1fr);
+  margin-top: 12px;
 }
 
 .teacher-button-strong {
@@ -929,6 +941,7 @@ button {
 .detail-card dt {
   color: var(--ink-soft);
   font-size: 0.88rem;
+  font-weight: 600;
   margin-bottom: 0;
   line-height: 1.2;
 }
@@ -1006,8 +1019,8 @@ select {
   width: 100%;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(138, 112, 90, 0.28);
+  background: rgba(255, 255, 255, 0.96);
   color: var(--ink);
 }
 

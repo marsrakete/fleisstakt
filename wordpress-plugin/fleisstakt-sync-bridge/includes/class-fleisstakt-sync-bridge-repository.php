@@ -113,6 +113,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       app_student_id VARCHAR(64) NOT NULL,
       upload_token VARCHAR(64) NOT NULL,
       connect_code VARCHAR(8) NOT NULL DEFAULT '',
+      camera_debug_enabled TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(20) NOT NULL DEFAULT 'active',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
@@ -670,11 +671,12 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
           'app_student_id' => $data['app_student_id'] ?: $this->generate_uuid('app'),
           'upload_token' => $data['upload_token'] ?: $this->generate_token('upload'),
           'connect_code' => $data['connect_code'] ?: $this->generate_connection_code(),
+          'camera_debug_enabled' => !empty($data['camera_debug_enabled']) ? 1 : 0,
           'status' => $data['status'] ?? 'active',
           'created_at' => $now,
           'updated_at' => $now,
         ],
-        ['%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
+        ['%s', '%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s']
       ),
       'Profil konnte nicht gespeichert werden.'
     );
@@ -698,10 +700,11 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
           'status' => $data['status'] ?? 'active',
           'upload_token' => !empty($data['regenerate_upload_token']) ? $this->generate_token('upload') : $existing['upload_token'],
           'connect_code' => !empty($data['regenerate_connect_code']) ? $this->generate_connection_code() : ($existing['connect_code'] ?? $this->generate_connection_code()),
+          'camera_debug_enabled' => !empty($data['camera_debug_enabled']) ? 1 : 0,
           'updated_at' => current_time('mysql', true),
         ],
         ['id' => $id],
-        ['%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s'],
+        ['%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s'],
         ['%d']
       ),
       'Profil konnte nicht aktualisiert werden.'
@@ -1986,6 +1989,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       'instrument' => $profile['instrument'],
       'goal' => (int) $profile['goal_minutes'],
       'profileLabel' => $profile['profile_label'],
+      'cameraDebugEnabled' => !empty($profile['camera_debug_enabled']),
       'classId' => $profile['class_uuid'] ?? '',
       'className' => $profile['class_name'] ?? '',
       'practiceCategories' => $this->get_practice_categories_for_profile($profile),

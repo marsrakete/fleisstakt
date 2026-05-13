@@ -83,6 +83,7 @@ const state = {
   scannerMessage: "",
   scannerState: "idle",
   scannerDebugLines: [],
+  cameraDebugEnabled: false,
   syncStatusOpen: false,
   syncStatusTitle: "",
   syncStatusMessage: "",
@@ -101,7 +102,6 @@ let qrScannerStream = null;
 let qrScannerFrameHandle = 0;
 let qrScanAbort = false;
 let scannerRetryHandle = 0;
-const QR_SCANNER_DEBUG = true;
 let activeSyncAutoCloseHandle = 0;
 let studentSyncInProgress = false;
 let studentAutoSyncPending = false;
@@ -146,7 +146,7 @@ function prefersReducedMotion() {
 }
 
 function logQrScannerDebug(event, details = {}) {
-  if (!QR_SCANNER_DEBUG) {
+  if (!state.cameraDebugEnabled) {
     return;
   }
   console.log("[FleissTakt][QR]", event, details);
@@ -827,6 +827,7 @@ function normalizeStoredProfile(profile = {}) {
     feedbackAnswers: profile.feedbackAnswers && typeof profile.feedbackAnswers === "object" ? profile.feedbackAnswers : {},
     feedbackStatus: ["idle", "ready", "answered", "sending", "success", "error"].includes(profile.feedbackStatus) ? profile.feedbackStatus : "idle",
     feedbackError: profile.feedbackError || "",
+    cameraDebugEnabled: Boolean(profile.cameraDebugEnabled),
   };
 }
 
@@ -855,6 +856,7 @@ function currentProfileSnapshot(overrides = {}) {
     feedbackAnswers: state.feedbackAnswers,
     feedbackStatus: state.feedbackStatus,
     feedbackError: state.feedbackError,
+    cameraDebugEnabled: state.cameraDebugEnabled,
     ...overrides,
   });
 }
@@ -907,6 +909,7 @@ function applyStoredProfile(profile) {
   state.feedbackAnswers = normalized.feedbackAnswers;
   state.feedbackStatus = normalized.feedbackStatus;
   state.feedbackError = normalized.feedbackError;
+  state.cameraDebugEnabled = Boolean(normalized.cameraDebugEnabled);
 }
 
 function getProfileFormValues() {
@@ -1224,6 +1227,7 @@ function parseProfilePackage(text) {
         instrument: parsed.instrument,
         goal: parsed.goal,
         profileLabel: parsed.profileLabel,
+        cameraDebugEnabled: parsed.cameraDebugEnabled,
         classId: parsed.classId,
         className: parsed.className,
       }
@@ -1265,6 +1269,7 @@ function applyProfilePackagePayload(payload, options = {}) {
     syncBaseUrl: payload.syncBaseUrl,
     syncUploadToken: payload.uploadToken,
     syncSiteLabel: payload.siteLabel || "",
+    cameraDebugEnabled: Boolean(payload.cameraDebugEnabled),
   });
   const existingIndex = state.profileLibrary.findIndex((profile) => isSameStoredProfile(profile, nextProfile));
   const existingProfile = existingIndex >= 0
@@ -3286,7 +3291,7 @@ function render() {
                 </div>
                 <p class="settings-copy">${escapeHtml(connectionScannerText())}</p>
                 ${
-                  QR_SCANNER_DEBUG
+                  state.cameraDebugEnabled
                     ? `<div class="scanner-debug" aria-live="polite">
                   <strong>Scanner-Debug</strong>
                   <code>${escapeHtml((state.scannerDebugLines || []).join("\n") || "Noch keine Debug-Ereignisse.")}</code>
