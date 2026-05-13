@@ -173,9 +173,10 @@ button {
   min-height: 46px;
   padding: 10px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--accent-deep);
-  border: 1px solid rgba(24, 34, 47, 0.08);
+  background: linear-gradient(180deg, #f4814f, var(--accent));
+  color: #fffaf3;
+  border: 1px solid rgba(200, 88, 49, 0.4);
+  box-shadow: 0 10px 24px rgba(216, 91, 46, 0.16);
   display: inline-grid;
   place-items: center;
 }
@@ -190,7 +191,7 @@ button {
 }
 
 .teacher-button-primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, #f4814f, var(--accent));
   color: #fffaf3;
 }
 
@@ -201,9 +202,9 @@ button {
 }
 
 .teacher-button-subtle {
-  background: rgba(255, 255, 255, 0.62);
-  color: var(--ink-soft);
-  border-color: rgba(24, 34, 47, 0.08);
+  background: linear-gradient(180deg, #f4814f, var(--accent));
+  color: #fffaf3;
+  border-color: rgba(200, 88, 49, 0.4);
 }
 
 .teacher-settings-dialog[open] {

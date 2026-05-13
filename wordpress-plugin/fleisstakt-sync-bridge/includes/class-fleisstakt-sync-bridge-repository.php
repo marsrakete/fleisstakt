@@ -1297,6 +1297,42 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
         }
       }
 
+      $stale_teacher_classes = $this->wpdb->get_results(
+        $this->wpdb->prepare(
+          "SELECT id FROM {$this->classes_table} WHERE teacher_id = %d",
+          $teacher_id
+        ),
+        ARRAY_A
+      );
+
+      foreach ($stale_teacher_classes as $stale_teacher_class) {
+        $class_id = (int) ($stale_teacher_class['id'] ?? 0);
+        if (!$class_id || in_array($class_id, $class_uuid_to_id, true)) {
+          continue;
+        }
+
+        $this->assert_db_write_success(
+          $this->wpdb->update(
+            $this->profiles_table,
+            ['class_id' => null],
+            ['class_id' => $class_id],
+            ['%d'],
+            ['%d']
+          ),
+          'Klassen-Zuordnungen konnten vor dem Löschen nicht entfernt werden.',
+          true
+        );
+
+        $this->assert_db_write_success(
+          $this->wpdb->delete(
+            $this->classes_table,
+            ['id' => $class_id, 'teacher_id' => $teacher_id],
+            ['%d', '%d']
+          ),
+          'Entfernte Klasse konnte nicht gelöscht werden.'
+        );
+      }
+
       return [
         'classCount' => count($class_uuid_to_id),
         'studentCount' => count($incoming_profile_ids),
