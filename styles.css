@@ -1097,6 +1097,28 @@ input[type="range"] {
   gap: 12px;
 }
 
+.scanner-debug {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(24, 34, 47, 0.08);
+  border: 1px solid rgba(24, 34, 47, 0.08);
+}
+
+.scanner-debug strong {
+  font-size: 0.88rem;
+}
+
+.scanner-debug code {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
 .scanner-stage {
   position: relative;
   overflow: hidden;

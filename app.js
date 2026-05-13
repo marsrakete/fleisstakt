@@ -82,6 +82,7 @@ const state = {
   scannerOpen: false,
   scannerMessage: "",
   scannerState: "idle",
+  scannerDebugLines: [],
   syncStatusOpen: false,
   syncStatusTitle: "",
   syncStatusMessage: "",
@@ -100,6 +101,7 @@ let qrScannerStream = null;
 let qrScannerFrameHandle = 0;
 let qrScanAbort = false;
 let scannerRetryHandle = 0;
+const QR_SCANNER_DEBUG = true;
 let activeSyncAutoCloseHandle = 0;
 let studentSyncInProgress = false;
 let studentAutoSyncPending = false;
@@ -131,9 +133,32 @@ applyModalScrollLock();
 applyReloadStatusFromUrl();
 applyConnectionFromUrl();
 registerServiceWorker();
+logQrScannerDebug("app-loaded", {
+  version: typeof globalThis.APP_VERSION_INFO === "object" ? globalThis.APP_VERSION_INFO.appVersion : "",
+  secureContext: window.isSecureContext,
+  hasMediaDevices: Boolean(navigator.mediaDevices),
+  hasGetUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+  userAgent: navigator.userAgent,
+});
 
 function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+}
+
+function logQrScannerDebug(event, details = {}) {
+  if (!QR_SCANNER_DEBUG) {
+    return;
+  }
+  console.log("[FleissTakt][QR]", event, details);
+  const noisyEvents = new Set(["tick-frame-ready"]);
+  if (noisyEvents.has(event)) {
+    return;
+  }
+  const detailText = Object.entries(details)
+    .map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .join(" · ");
+  const line = detailText ? `${event}: ${detailText}` : event;
+  state.scannerDebugLines = [line, ...(state.scannerDebugLines || [])].slice(0, 8);
 }
 
 function createIntroFlight(variant = "start") {
@@ -262,10 +287,36 @@ function connectionScannerText() {
   if (state.scannerState === "error" && state.scannerMessage) {
     return state.scannerMessage;
   }
+  if (state.scannerState === "starting") {
+    return state.scannerMessage || "Kamera wird gestartet...";
+  }
   if (state.scannerState === "active") {
     return state.scannerMessage || "Halte den QR-Code ruhig in die Kamera.";
   }
   return state.scannerMessage || "Der QR-Code aus der Lehrkräfte-App kann direkt mit der Kamera oder über ein Bild erkannt werden.";
+}
+
+function getScannerStartErrorMessage(error) {
+  logQrScannerDebug("scanner-start-error-message", {
+    name: `${error?.name || ""}`.trim(),
+    message: `${error?.message || ""}`.trim(),
+  });
+  const name = `${error?.name || ""}`.trim();
+  const message = `${error?.message || ""}`.trim();
+
+  if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
+    return "Kein Kamerazugriff. Bitte Kamera im Browser oder auf dem Gerät für FleißTakt erlauben.";
+  }
+
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "Keine Kamera gefunden. Du kannst stattdessen ein QR-Bild auswählen oder ID und Code eingeben.";
+  }
+
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "Die Kamera ist gerade durch eine andere App oder einen anderen Tab belegt.";
+  }
+
+  return message || "Kamera konnte nicht gestartet werden.";
 }
 
 function formatStudentDateTime(value) {
@@ -585,7 +636,7 @@ function registerServiceWorker() {
 
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("./sw.js");
+      const registration = await navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
       serviceWorkerRegistration = registration;
       watchServiceWorker(registration);
       await navigator.serviceWorker.ready.catch(() => registration);
@@ -1529,6 +1580,10 @@ function applyConnectionCandidate(candidate) {
 }
 
 function stopQrScanner() {
+  logQrScannerDebug("stop-scanner", {
+    hadStream: Boolean(qrScannerStream),
+    scannerOpen: state.scannerOpen,
+  });
   qrScanAbort = true;
   window.cancelAnimationFrame(qrScannerFrameHandle);
   window.clearTimeout(scannerRetryHandle);
@@ -1546,10 +1601,15 @@ function stopQrScanner() {
 }
 
 function closeScannerDialog() {
+  logQrScannerDebug("close-scanner-dialog", {
+    scannerState: state.scannerState,
+    scannerOpen: state.scannerOpen,
+  });
   stopQrScanner();
   state.scannerOpen = false;
   state.scannerMessage = "";
   state.scannerState = "idle";
+  state.scannerDebugLines = [];
   state.settingsOpen = true;
   state.settingsFocusId = "connect-profile-button";
   applyModalScrollLock();
@@ -1557,6 +1617,10 @@ function closeScannerDialog() {
 }
 
 async function handleScannedConnectionPayload(rawValue) {
+  logQrScannerDebug("qr-payload-detected", {
+    length: `${rawValue || ""}`.length,
+    preview: `${rawValue || ""}`.slice(0, 120),
+  });
   const candidate = parseConnectionPayload(rawValue);
   const connection = applyConnectionCandidate(candidate);
   closeScannerDialog();
@@ -1565,11 +1629,16 @@ async function handleScannedConnectionPayload(rawValue) {
 
 async function attachQrScannerStreamToVideo() {
   if (!qrScannerStream || !state.scannerOpen) {
+    logQrScannerDebug("attach-video-skipped", {
+      hasStream: Boolean(qrScannerStream),
+      scannerOpen: state.scannerOpen,
+    });
     return null;
   }
 
   const video = document.querySelector("#connect-qr-video");
   if (!video) {
+    logQrScannerDebug("attach-video-missing-element");
     return null;
   }
 
@@ -1583,13 +1652,30 @@ async function attachQrScannerStreamToVideo() {
 
   if (video.srcObject !== qrScannerStream) {
     video.srcObject = qrScannerStream;
+    logQrScannerDebug("attach-video-srcObject-set");
   }
 
-  await video.play().catch(() => {});
+  await video.play().then(() => {
+    logQrScannerDebug("video-play-ok", {
+      readyState: video.readyState,
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+    });
+  }).catch((error) => {
+    logQrScannerDebug("video-play-error", {
+      name: error?.name || "",
+      message: error?.message || "",
+    });
+  });
   return video;
 }
 
 async function scanConnectionImageFile(file) {
+  logQrScannerDebug("scan-image-start", {
+    fileName: file?.name || "",
+    fileType: file?.type || "",
+    fileSize: file?.size || 0,
+  });
   if (!qrImageFallbackSupported()) {
     throw new Error("QR-Erkennung aus Bildern wird auf diesem Gerät gerade nicht unterstützt.");
   }
@@ -1597,8 +1683,12 @@ async function scanConnectionImageFile(file) {
   try {
     const rawValue = await detectQrCodeFromBitmap(bitmap);
     if (!rawValue) {
+      logQrScannerDebug("scan-image-no-qr");
       throw new Error("Kein QR-Code im ausgewählten Bild gefunden.");
     }
+    logQrScannerDebug("scan-image-qr-found", {
+      preview: rawValue.slice(0, 120),
+    });
     await handleScannedConnectionPayload(rawValue);
   } finally {
     bitmap.close?.();
@@ -1606,6 +1696,12 @@ async function scanConnectionImageFile(file) {
 }
 
 async function startQrScanner() {
+  logQrScannerDebug("start-scanner-click", {
+    secureContext: window.isSecureContext,
+    hasMediaDevices: Boolean(navigator.mediaDevices),
+    hasGetUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+    userAgent: navigator.userAgent,
+  });
   if (!scannerSupported()) {
     state.scannerState = "error";
     state.scannerMessage = "Die Kamera-QR-Erkennung wird auf diesem Gerät gerade nicht unterstützt. Du kannst stattdessen ID und Code eintippen oder ein Bild mit QR-Code auswählen.";
@@ -1615,15 +1711,29 @@ async function startQrScanner() {
 
   stopQrScanner();
   qrScanAbort = false;
-  state.scannerState = "active";
+  state.scannerState = "starting";
   state.scannerMessage = "Kamera wird gestartet...";
   render();
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      facingMode: { ideal: "environment" },
-    },
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+      },
+    });
+  } catch (error) {
+    logQrScannerDebug("getUserMedia-error", {
+      name: error?.name || "",
+      message: error?.message || "",
+      secureContext: window.isSecureContext,
+    });
+    throw error;
+  }
+  logQrScannerDebug("getUserMedia-ok", {
+    trackCount: stream?.getTracks?.().length || 0,
+    trackLabels: stream?.getTracks?.().map((track) => track.label) || [],
   });
   qrScannerStream = stream;
   render();
@@ -1648,13 +1758,25 @@ async function startQrScanner() {
 
     try {
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        logQrScannerDebug("tick-frame-ready", {
+          readyState: video.readyState,
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+        });
         const rawValue = await detectQrCodeFromVideo(video);
         if (rawValue) {
+          logQrScannerDebug("tick-qr-found", {
+            preview: rawValue.slice(0, 120),
+          });
           await handleScannedConnectionPayload(rawValue);
           return;
         }
       }
-    } catch {
+    } catch (error) {
+      logQrScannerDebug("tick-read-error", {
+        name: error?.name || "",
+        message: error?.message || "",
+      });
       state.scannerState = "error";
       state.scannerMessage = "Die Kamera läuft, aber der QR-Code konnte gerade nicht gelesen werden.";
       render();
@@ -1667,10 +1789,12 @@ async function startQrScanner() {
 }
 
 function openScannerDialog() {
+  logQrScannerDebug("open-scanner-dialog");
   state.settingsOpen = false;
   state.settingsFocusId = "";
   state.scannerOpen = true;
   state.scannerState = "idle";
+  state.scannerDebugLines = [];
   state.scannerMessage = scannerSupported()
     ? "Kamera wird vorbereitet..."
     : "Dieses Gerät unterstützt die direkte Kameraerkennung gerade nicht vollständig. Du kannst trotzdem ein QR-Bild auswählen oder ID und Code eingeben.";
@@ -3145,10 +3269,12 @@ function render() {
           </form>
         </dialog>
 
-        <dialog class="settings-dialog" id="scanner-dialog">
-          <form method="dialog" class="settings-sheet" tabindex="-1">
+        ${
+          state.scannerOpen
+            ? `<div class="scanner-overlay" id="scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="scanner-dialog-title">
+          <div class="settings-sheet scanner-sheet" tabindex="-1">
             <div class="section-head">
-              <h2>QR-Code scannen</h2>
+              <h2 id="scanner-dialog-title">QR-Code scannen</h2>
               <p>Scanne den Kopplungs-QR aus der Lehrkräfte-App oder wähle ein Bild mit QR-Code aus.</p>
             </div>
 
@@ -3159,6 +3285,14 @@ function render() {
                   <div class="scanner-frame" aria-hidden="true"></div>
                 </div>
                 <p class="settings-copy">${escapeHtml(connectionScannerText())}</p>
+                ${
+                  QR_SCANNER_DEBUG
+                    ? `<div class="scanner-debug" aria-live="polite">
+                  <strong>Scanner-Debug</strong>
+                  <code>${escapeHtml((state.scannerDebugLines || []).join("\n") || "Noch keine Debug-Ereignisse.")}</code>
+                </div>`
+                    : ""
+                }
               </div>
             </section>
 
@@ -3171,8 +3305,10 @@ function render() {
             <div class="settings-actions settings-actions-close">
               <button class="secondary-action" type="button" id="close-scanner">Schließen</button>
             </div>
-          </form>
-        </dialog>
+          </div>
+        </div>`
+            : ""
+        }
 
         <dialog class="settings-dialog" id="sync-status-dialog">
           <form method="dialog" class="settings-sheet" tabindex="-1">
@@ -3327,25 +3463,14 @@ function bindEvents() {
 
   const scannerDialog = document.querySelector("#scanner-dialog");
   if (scannerDialog) {
-    if (state.scannerOpen && !scannerDialog.open) {
-      scannerDialog.showModal();
-      window.requestAnimationFrame(() => {
-        startQrScanner().catch((error) => {
-          state.scannerState = "error";
-          state.scannerMessage = error?.message || "Kamera konnte nicht gestartet werden.";
-          render();
-        });
-      });
-    }
-
     if (state.scannerOpen && qrScannerStream) {
       window.requestAnimationFrame(() => {
         void attachQrScannerStreamToVideo();
       });
     }
 
-    scannerDialog.addEventListener("close", () => {
-      if (state.scannerOpen) {
+    scannerDialog.addEventListener("click", (event) => {
+      if (event.target === scannerDialog) {
         closeScannerDialog();
       }
     });
@@ -3577,6 +3702,11 @@ function bindEvents() {
   if (openQrScannerButton) {
     openQrScannerButton.addEventListener("click", () => {
       openScannerDialog();
+      startQrScanner().catch((error) => {
+        state.scannerState = "error";
+        state.scannerMessage = getScannerStartErrorMessage(error);
+        render();
+      });
     });
   }
 
@@ -3587,7 +3717,7 @@ function bindEvents() {
         await startQrScanner();
       } catch (error) {
         state.scannerState = "error";
-        state.scannerMessage = error?.message || "Kamera konnte nicht neu gestartet werden.";
+        state.scannerMessage = getScannerStartErrorMessage(error);
         render();
       }
     });
@@ -3596,7 +3726,7 @@ function bindEvents() {
   const closeScannerButton = document.querySelector("#close-scanner");
   if (closeScannerButton) {
     closeScannerButton.addEventListener("click", () => {
-      document.querySelector("#scanner-dialog")?.close();
+      closeScannerDialog();
     });
   }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "fleisstakt-shell-v96";
+const CACHE_NAME = "fleisstakt-shell-v103";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -17,8 +17,64 @@ const APP_ASSETS = [
   "./icons/fleisstakt-share-qr.svg",
 ];
 
+const NETWORK_FIRST_FILES = [
+  "/",
+  "/index.html",
+  "/app.js",
+  "/styles.css",
+  "/version.js",
+  "/manifest.webmanifest",
+  "/teacher.html",
+  "/teacher.js",
+  "/teacher.css",
+  "/teacher-manifest.webmanifest",
+  "/vendor-jsQR.js",
+];
+
+function shouldUseNetworkFirst(request) {
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) {
+    return false;
+  }
+
+  if (request.mode === "navigate") {
+    return true;
+  }
+
+  return NETWORK_FIRST_FILES.some((path) => url.pathname.endsWith(path));
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const networkResponse = await fetch(request, { cache: "no-store" });
+    if (networkResponse && networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    const cachedResponse = await caches.match(request);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    throw error;
+  }
+}
+
+async function cacheFirst(request) {
+  const cachedResponse = await caches.match(request);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
+  const networkResponse = await fetch(request);
+  const cloned = networkResponse.clone();
+  caches.open(CACHE_NAME).then((cache) => cache.put(request, cloned));
+  return networkResponse;
+}
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
@@ -42,17 +98,5 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((networkResponse) => {
-        const cloned = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
-        return networkResponse;
-      });
-    }),
-  );
+  event.respondWith(shouldUseNetworkFirst(event.request) ? networkFirst(event.request) : cacheFirst(event.request));
 });
