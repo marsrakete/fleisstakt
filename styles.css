@@ -916,6 +916,17 @@ input[type="range"] {
   backdrop-filter: blur(6px);
 }
 
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(31, 42, 54, 0.34);
+  backdrop-filter: blur(6px);
+}
+
 .settings-sheet {
   display: grid;
   gap: 14px;
@@ -930,6 +941,10 @@ input[type="range"] {
   overflow-x: hidden;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
+}
+
+.scanner-sheet {
+  width: min(92vw, 520px);
 }
 
 .settings-block {
