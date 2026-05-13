@@ -32,90 +32,7 @@ const cardRuleTypes = [
   "daysPracticedAtLeast",
 ];
 const accentFallbacks = ["apricot", "gold", "sky", "mint"];
-const standardCardDefinitions = [
-  {
-    id: "warm-gespielt",
-    title: "Warm gespielt",
-    description: "3 Tage in Folge geübt",
-    accent: "apricot",
-    symbol: "♬",
-    rarity: "Bronze",
-    source: "core",
-    status: "active",
-    rule: {
-      type: "streakAtLeast",
-      value: 3,
-    },
-  },
-  {
-    id: "taktsicher",
-    title: "Taktsicher",
-    description: "60 Minuten in einer Woche",
-    accent: "gold",
-    symbol: "✦",
-    rarity: "Gold",
-    source: "core",
-    status: "active",
-    rule: {
-      type: "weekMinutesAtLeast",
-      value: 60,
-    },
-  },
-  {
-    id: "morgenklang",
-    title: "Morgenklang",
-    description: "Vor 8 Uhr geübt",
-    accent: "sky",
-    symbol: "☀",
-    rarity: "Silber",
-    source: "core",
-    status: "active",
-    rule: {
-      type: "morningEntryOnce",
-      value: 1,
-    },
-  },
-  {
-    id: "buehnenmut",
-    title: "Bühnenmut",
-    description: "7 Einträge mit Notiz",
-    accent: "mint",
-    symbol: "✺",
-    rarity: "Spezial",
-    source: "core",
-    status: "active",
-    rule: {
-      type: "notedEntriesAtLeast",
-      value: 7,
-    },
-  },
-];
-const defaultEntries = [
-  createEntry({
-    date: daysAgo(4),
-    instrument: "Klavier",
-    minutes: 15,
-    category: "Technik",
-    note: "Rhythmus geklappt",
-    savedAt: withTime(daysAgo(4), 16, 30),
-  }),
-  createEntry({
-    date: daysAgo(3),
-    instrument: "Klavier",
-    minutes: 20,
-    category: "Stück",
-    note: "Frühlingslied sauberer",
-    savedAt: withTime(daysAgo(3), 17, 10),
-  }),
-  createEntry({
-    date: daysAgo(1),
-    instrument: "Klavier",
-    minutes: 25,
-    category: "Freies Spiel",
-    note: "Mit mehr Mut gespielt",
-    savedAt: withTime(daysAgo(1), 7, 40),
-  }),
-];
+const defaultEntries = [];
 
 const state = {
   activeScreen: "today",
@@ -125,7 +42,7 @@ const state = {
   note: "",
   celebrate: false,
   celebrationText: "Neues Kärtchen vorbereitet. Weiter so!",
-  profileName: "Mila",
+  profileName: "",
   studentId: "",
   studentUuid: "",
   profileUuid: "",
@@ -725,7 +642,7 @@ function getProfileStorageId(profile = {}) {
 function normalizeStoredProfile(profile = {}) {
   return {
     storageId: getProfileStorageId(profile),
-    profileName: profile.profileName || profile.displayName || "Mila",
+    profileName: profile.profileName || profile.displayName || "",
     profileLabel: profile.profileLabel || profile.instrument || "Profil",
     instrument: profile.instrument || instruments[0],
     goal: Number(profile.goal) || 15,
@@ -865,7 +782,7 @@ function hydrateState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      state.entries = [...defaultEntries];
+      state.entries = [];
       state.studentId = createStudentId();
       state.activeProfileId = state.studentId;
       syncCurrentStateIntoProfileLibrary();
@@ -875,14 +792,14 @@ function hydrateState() {
 
     const parsed = JSON.parse(raw);
     const legacyProfile = normalizeStoredProfile({
-      profileName: parsed.profileName || "Mila",
+      profileName: parsed.profileName || "",
       instrument: parsed.instrument || instruments[0],
       goal: Number(parsed.goal) || 15,
       studentId: parsed.studentId || createStudentId(),
       studentUuid: parsed.studentUuid || "",
       profileUuid: parsed.profileUuid || "",
       classId: parsed.classId || "",
-      entries: Array.isArray(parsed.entries) ? parsed.entries : [...defaultEntries],
+      entries: Array.isArray(parsed.entries) ? parsed.entries : [],
       customCards: Array.isArray(parsed.customCards) ? parsed.customCards : [],
       syncBaseUrl: parsed.syncBaseUrl || DEFAULT_SYNC_BASE_URL,
       syncUploadToken: parsed.syncUploadToken || "",
@@ -903,7 +820,7 @@ function hydrateState() {
       || legacyProfile,
     );
   } catch {
-    state.entries = [...defaultEntries];
+    state.entries = [];
     state.studentId = createStudentId();
     state.customCards = [];
     state.activeProfileId = state.studentId;
@@ -1021,7 +938,7 @@ async function importBackupFile(file) {
 
   state.entries = backup.entries;
   state.instrument = backup.instrument || instruments[0];
-  state.profileName = backup.profileName || "Mila";
+  state.profileName = backup.profileName || "";
   state.studentId = backup.studentId || state.studentId || createStudentId();
   state.studentUuid = backup.studentUuid || "";
   state.profileUuid = backup.profileUuid || "";
@@ -1031,7 +948,7 @@ async function importBackupFile(file) {
   state.profileLibrary = Array.isArray(backup.profileLibrary) && backup.profileLibrary.length
     ? backup.profileLibrary.map(normalizeStoredProfile)
     : [normalizeStoredProfile({
-        profileName: backup.profileName || "Mila",
+      profileName: backup.profileName || "",
       instrument: backup.instrument || instruments[0],
       goal: Number(backup.goal) || 15,
         studentId: backup.studentId || state.studentId || createStudentId(),
@@ -1152,7 +1069,7 @@ function applyProfilePackagePayload(payload, options = {}) {
   syncCurrentStateIntoProfileLibrary();
   const nextProfile = normalizeStoredProfile({
     storageId: payload.profileUuid || payload.appStudentId,
-    profileName: payload.displayName || "Mila",
+    profileName: payload.displayName || "",
     profileLabel: payload.profileLabel || payload.instrument || "Profil",
     instrument: payload.instrument || instruments[0],
     goal: Number(payload.goal) || 15,
@@ -1637,7 +1554,7 @@ function resetStudentAppForTesting() {
   state.practiceCategories = [...defaultPracticeCategories];
   state.category = state.practiceCategories[0];
   state.note = "";
-  state.profileName = "Neustart";
+  state.profileName = "";
   state.studentId = nextStudentId;
   state.studentUuid = "";
   state.profileUuid = "";
@@ -1844,14 +1761,7 @@ function getActiveCardDefinitions() {
     .filter((card) => card.status === "active")
     .filter((card) => isCardAssignedToCurrentProfile(card));
 
-  if (state.syncUploadToken) {
-    return teacherCards;
-  }
-
-  return [
-    ...standardCardDefinitions.map((card) => normalizeCardDefinition(card, "core")),
-    ...teacherCards,
-  ];
+  return teacherCards;
 }
 
 function isCardAssignedToCurrentProfile(card) {
@@ -2745,6 +2655,39 @@ function profileScreen() {
 }
 
 function currentScreen() {
+  if (!state.syncUploadToken) {
+    return `
+      <section class="screen screen-connect-first">
+        <article class="hero-panel">
+          <p class="eyebrow">Erster Start</p>
+          <h2>Mit Lehrkraft verbinden.</h2>
+          <p class="lead">Danach kommen Unterricht, Instrument, Ziele und Kärtchen automatisch in die App.</p>
+        </article>
+
+        <section class="mentor-panel">
+          <div class="section-head">
+            <h3>So geht es weiter</h3>
+            <p>Du brauchst nur einen der beiden Wege.</p>
+          </div>
+          <div class="help-list">
+            <article class="help-step">
+              <strong>Weg A: QR-Code scannen</strong>
+              <p>Die Lehrkraft zeigt dir den QR-Code direkt aus der Lehrkräfte-App.</p>
+            </article>
+            <article class="help-step">
+              <strong>Weg B: Lernenden-ID und Verbindungscode eingeben</strong>
+              <p>Falls kein QR-Code da ist, bekommst du stattdessen diese beiden Angaben.</p>
+            </article>
+          </div>
+          <div class="mentor-actions">
+            <button class="primary-button connect-cta-button" type="button" id="open-connect-flow">Mit Lehrkraft verbinden</button>
+            <button class="secondary-action" type="button" id="open-help-flow">Hilfe ansehen</button>
+          </div>
+        </section>
+      </section>
+    `;
+  }
+
   if (state.activeScreen === "log") {
     return logScreen();
   }
@@ -2788,18 +2731,22 @@ function render() {
           ${currentScreen()}
         </main>
 
-        <nav class="bottom-nav" aria-label="Hauptnavigation">
-          ${navItems
-            .map(
-              (item) => `
-                <button class="nav-item ${state.activeScreen === item.id ? "is-active" : ""}" type="button" data-nav="${item.id}">
-                  <span>${item.icon}</span>
-                  <strong>${item.label}</strong>
-                </button>
-              `,
-            )
-            .join("")}
-        </nav>
+        ${
+          state.syncUploadToken
+            ? `<nav class="bottom-nav" aria-label="Hauptnavigation">
+                ${navItems
+                  .map(
+                    (item) => `
+                      <button class="nav-item ${state.activeScreen === item.id ? "is-active" : ""}" type="button" data-nav="${item.id}">
+                        <span>${item.icon}</span>
+                        <strong>${item.label}</strong>
+                      </button>
+                    `,
+                  )
+                  .join("")}
+              </nav>`
+            : ""
+        }
 
         ${
           state.celebrate
@@ -3404,6 +3351,25 @@ function bindEvents() {
     });
   }
 
+  const openConnectFlowButton = document.querySelector("#open-connect-flow");
+  if (openConnectFlowButton) {
+    openConnectFlowButton.addEventListener("click", () => {
+      state.settingsOpen = true;
+      state.settingsFocusId = "connect-profile-button";
+      applyModalScrollLock();
+      render();
+    });
+  }
+
+  const openHelpFlowButton = document.querySelector("#open-help-flow");
+  if (openHelpFlowButton) {
+    openHelpFlowButton.addEventListener("click", () => {
+      state.helpOpen = true;
+      applyModalScrollLock();
+      render();
+    });
+  }
+
   const closeSettingsButton = document.querySelector("#close-settings");
   if (closeSettingsButton) {
     closeSettingsButton.addEventListener("click", () => {
@@ -3801,7 +3767,7 @@ function bindEvents() {
   if (profileForm) {
     profileForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      state.profileName = document.querySelector("#profile-name")?.value?.trim() || "Mila";
+      state.profileName = document.querySelector("#profile-name")?.value?.trim() || "";
       if (!state.syncUploadToken) {
         state.instrument = document.querySelector("#profile-instrument")?.value || instruments[0];
       }

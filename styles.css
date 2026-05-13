@@ -231,6 +231,21 @@ button {
   font-weight: 700;
 }
 
+.connect-cta-button {
+  border: 1px solid rgba(177, 66, 20, 0.28);
+  background: linear-gradient(180deg, #ff955e 0%, #f26f3d 54%, #d85b2e 100%);
+  color: #fffaf2;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: 0 14px 28px rgba(216, 91, 46, 0.24);
+}
+
+.connect-cta-button:hover,
+.connect-cta-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 32px rgba(216, 91, 46, 0.28);
+}
+
 .save-button {
   display: inline-flex;
   justify-content: center;
