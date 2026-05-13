@@ -21,26 +21,26 @@ Dafür bekommen sie Rückmeldung in Form von Fortschritt, Serien und Kärtchen-Z
 
 ## Warum WordPress als Zentrale?
 
-FleißTakt nutzt inzwischen ein eigenes WordPress-Plugin als Server-Zentrale. Das hat einen sehr praktischen Grund: WordPress ist weit verbreitet, auf vielen bestehenden Websites schon vorhanden und für viele Musikschulen, Lehrkräfte oder Träger technisch leichter zugänglich als ein komplett eigener Backend-Stack.
+FleißTakt nutzt ein eigenes WordPress-Plugin als Server-Zentrale. Das hat einen sehr praktischen Grund: WordPress ist weit verbreitet, auf vielen bestehenden Websites schon vorhanden und für viele Musikschulen, Lehrkräfte oder Träger technisch leichter zugänglich als ein komplett eigener Backend-Stack.
 
 Vorteile dieser Entscheidung:
 
 - große Verbreitung und bekannte Hosting-Umgebung
 - einfacher Plugin-Upload auf bestehende WordPress-Installationen
-- zentrale Datenhaltung für Lehrkräfte, Lernende, Profile, Berichte und Kärtchen
+- zentrale Datenhaltung für Lehrkräfte, Lernende, Unterrichte, Berichte und Kärtchen
 - Web-Administration ohne eigene Server-Oberfläche außerhalb von WordPress
 - gute Basis für späteren Ausbau über mehrere Geräte und mehrere Lehrkräfte hinweg
 
 WordPress ist hier also nicht das Produkt selbst, sondern die robuste und niedrigschwellige Infrastruktur darunter.
 
-## Wie die Kommunikation jetzt funktioniert
+## Wie die Kommunikation funktioniert
 
 FleißTakt läuft im Alltag über den Server-Sync mit dem WordPress-Plugin.
 
 ```mermaid
 flowchart LR
     A["Lernenden-App"] -->|Berichte und Profil-Sync| B["WordPress-Plugin"]
-    C["Lehrkräfte-App"] -->|Klassen, Lernende, Profile, Kärtchen| B
+C["Lehrkräfte-App"] -->|Klassen, Lernende, Unterrichte, Kärtchen| B
     B -->|Profil, Ziele, Zuordnungen| A
     B -->|Übersichten und Berichte| C
 ```
@@ -48,8 +48,8 @@ flowchart LR
 Im laufenden Betrieb bedeutet das:
 
 - Lernende synchronisieren ihre Einträge mit dem Server.
-- Die Lernenden-App lädt Profil, Ziel-Kärtchen und Server-Stand wieder nach.
-- Lehrkräfte synchronisieren Klassen, Lernende, Profile und Kärtchen mit demselben Server.
+- Die Lernenden-App lädt Profil, Kärtchen und Server-Stand wieder nach.
+- Lehrkräfte synchronisieren Klassen, Lernende, Unterrichte und Kärtchen mit demselben Server.
 - Das WordPress-Plugin ist die gemeinsame Wahrheit für Unterrichtsbeziehungen und Zuweisungen.
 
 ## Mandantenfähigkeit
@@ -61,44 +61,85 @@ Warum das wichtig ist:
 - eine Lehrkraft soll nur die eigenen Unterrichtsbeziehungen sehen
 - mehrere Lehrkräfte können denselben WordPress-Server nutzen
 - Lernende können mehreren Lehrkräften zugeordnet sein, zum Beispiel für verschiedene Instrumente
-- Kärtchen, Berichte und Profile müssen pro Unterrichtskontext sauber getrennt bleiben
+- Kärtchen, Berichte und Unterrichte müssen pro Lernweg sauber getrennt bleiben
 
 Das Plugin kann als Admin-Werkzeug alles sehen und pflegen. Im normalen Lehrkräfte-Alltag sorgt die Mandantenlogik aber dafür, dass die Lehrkräfte-App nur die passenden Daten lädt.
 
-## Profile statt nur eine Person
+## Unterrichte statt nur eine Person
 
-In FleißTakt ist eine lernende Person nicht automatisch nur ein einziges Profil. Stattdessen trennt das System zwischen Person und Profil.
+In der Oberfläche sprechen wir bewusst von `Unterrichten`, weil das für Lehrkräfte und Lernende verständlicher ist. Technisch dürfen diese Objekte intern `Profile` heißen.
+
+In FleißTakt ist eine lernende Person nicht automatisch nur ein einziger Unterricht. Stattdessen trennt das System zwischen Person und mehreren konkreten Unterrichtsbeziehungen.
 
 ```mermaid
 flowchart LR
-    L["Lernende Person<br/>Mila Beispiel"] --> P1["Profil 1<br/>Klavier<br/>Ziel 20 Min"]
-    L --> P2["Profil 2<br/>Violine<br/>Ziel 15 Min"]
-    L --> P3["Profil 3<br/>Gesang<br/>Ziel 10 Min"]
+    L["Lernende Person<br/>Mila Beispiel"]
 
-    P1 --> T1["Lehrkraft A"]
-    P2 --> T2["Lehrkraft B"]
-    P3 --> T3["Lehrkraft C"]
+    L --> U1["Unterricht 1<br/>Instrument X bei Lehrkraft A"]
+    L --> U2["Unterricht 2<br/>Instrument X bei Lehrkraft B"]
+    L --> U3["Unterricht 3<br/>Instrument Y bei Lehrkraft A"]
 
-    P1 --> C1["Klasse Mittwoch"]
-    P2 --> C2["Klasse Freitag"]
+    U1 --> K1["Klasse H"]
+    U2 --> K2["Klasse I"]
+    U3 --> K1
 
-    P1 --> S1["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
-    P2 --> S2["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
-    P3 --> S3["eigene Berichte<br/>eigene Kärtchen<br/>eigene Feedbacks"]
+    U1 --> T1["Lehrkraft A"]
+    U2 --> T2["Lehrkraft B"]
+    U3 --> T1
+
+    U1 --> D1["eigene Ziele<br/>eigene Kärtchen<br/>eigene Berichte"]
+    U2 --> D2["eigene Ziele<br/>eigene Kärtchen<br/>eigene Berichte"]
+    U3 --> D3["eigene Ziele<br/>eigene Kärtchen<br/>eigene Berichte"]
+
+    A1["Lernenden-App"] --> U1
+    A1 --> U2
+    A1 --> U3
+
+    A2["Lehrkräfte-App"] --> U1
+    A2 --> U2
+    A2 --> U3
+
+    WP["WordPress-Plugin<br/>Zentrale Serverstelle"] --> U1
+    WP --> U2
+    WP --> U3
+
+    classDef person fill:#ffffff,stroke:#7c8b9a,stroke-width:2px,color:#132238;
+    classDef lesson fill:#fff4ec,stroke:#f27f4b,stroke-width:2px,color:#132238;
+    classDef klass fill:#eef8fb,stroke:#2f7d94,stroke-width:2px,color:#132238;
+    classDef teacher fill:#eef6ee,stroke:#3f8a5f,stroke-width:2px,color:#132238;
+    classDef data fill:#fff8de,stroke:#d6a21d,stroke-width:2px,color:#132238;
+    classDef app fill:#f7f3ff,stroke:#7a5fd0,stroke-width:2px,color:#132238;
+    classDef plugin fill:#ffe8ef,stroke:#d85b87,stroke-width:2px,color:#132238;
+
+    class L person;
+    class U1,U2,U3 lesson;
+    class K1,K2 klass;
+    class T1,T2 teacher;
+    class D1,D2,D3 data;
+    class A1,A2 app;
+    class WP plugin;
+
+    linkStyle 0,1,2 stroke:#f27f4b,stroke-width:3px;
+    linkStyle 3,4,5 stroke:#2f7d94,stroke-width:3px;
+    linkStyle 6,7,8 stroke:#3f8a5f,stroke-width:3px;
+    linkStyle 9,10,11 stroke:#d6a21d,stroke-width:3px;
+    linkStyle 12,13,14 stroke:#7a5fd0,stroke-width:3px,stroke-dasharray: 6 4;
+    linkStyle 15,16,17 stroke:#7a5fd0,stroke-width:3px,stroke-dasharray: 6 4;
+    linkStyle 18,19,20 stroke:#d85b87,stroke-width:3px;
 ```
 
 Kurz gesagt:
 
 - Die `lernende Person` ist der Mensch selbst.
-- Das `Profil` ist der konkrete Unterrichtskontext.
-- Lehrkraft, Klasse, Ziele, Berichte und Feedback hängen am Profil, nicht direkt an der Person.
+- Der `Unterricht` ist der konkrete Lernweg.
+- Lehrkraft, Klasse, Ziele, Kärtchen, Berichte und Sync hängen am Unterricht, nicht direkt an der Person.
 
 ### Technische Sicht
 
 ```mermaid
 flowchart TB
-    ST["Student<br/>Personenstammdaten"] --> PR1["Profile<br/>Profil A"]
-    ST --> PR2["Profile<br/>Profil B"]
+    ST["Student<br/>Personenstammdaten"] --> PR1["Profile<br/>Unterricht A"]
+    ST --> PR2["Profile<br/>Unterricht B"]
 
     TE1["Teacher"] --> AS1["Assignment"]
     TE2["Teacher"] --> AS2["Assignment"]
@@ -137,10 +178,10 @@ Eine lernende Person ist der Mensch selbst:
 - Messenger-ID
 - optionale externe ID
 
-Ein Profil ist die konkrete Unterrichtsbeziehung:
+Ein Unterricht ist die konkrete Unterrichtsbeziehung:
 
 - Instrument
-- Profilbezeichnung
+- Unterrichtsbezeichnung
 - Tagesziel
 - zugeordnete Lehrkraft
 - optionale Klasse
@@ -153,57 +194,57 @@ Das ist wichtig, weil ein Lernender zum Beispiel gleichzeitig haben kann:
 - Violine bei Lehrkraft B
 - Gesang bei Lehrkraft C
 
-Dann sind das drei getrennte Profile mit jeweils eigenem Kontext, eigener Synchronisation und eigenen Zielen.
+Dann sind das drei getrennte Unterrichte mit jeweils eigenem Kontext, eigener Synchronisation und eigenen Zielen.
 
 ## Kärtchen und Ziele
 
-FleißTakt kennt weiterhin motivierende Ziel-Kärtchen. Diese können inzwischen nicht nur global existieren, sondern durch Lehrkräfte gezielt gepflegt und zugewiesen werden.
+FleißTakt nutzt motivierende Kärtchen. Diese werden durch Lehrkräfte gezielt gepflegt und zugewiesen.
 
 Dabei gilt:
 
 - Kärtchen können in der Lehrkräfte-App erstellt werden
 - Kärtchen werden über das WordPress-Plugin zentral gespeichert
-- Zuweisungen können für alle, für eine Klasse oder individuell für ein einzelnes Profil gelten
+- Zuweisungen können für alle, für eine Klasse oder individuell für einen einzelnen Unterricht gelten
 - die Lernenden-App zeigt im verbundenen Modus nur die wirklich zugewiesenen Ziele
 
 So bleibt die Motivation persönlich und passend zum jeweiligen Unterricht.
 
 ## Onboarding für Lehrkräfte
 
-Der empfohlene Ablauf für Lehrkräfte ist jetzt:
+Der empfohlene Ablauf für Lehrkräfte ist:
 
 1. WordPress-Plugin installieren und aktivieren.
 2. Lehrkraft im Plugin anlegen oder mit bestehendem Kontext arbeiten.
 3. In der Lehrkräfte-App Klassen und Lernende anlegen.
-4. Für jede Unterrichtsbeziehung ein eigenes Profil anlegen.
+4. Für jede Unterrichtsbeziehung einen eigenen Unterricht anlegen.
 5. Lehrkräfte-App mit dem Server synchronisieren.
-6. Für jedes Profil `Lernenden-ID` und `Verbindungscode` anzeigen, kopieren oder teilen.
+6. Für jeden Unterricht `Lernenden-ID` und `Verbindungscode` anzeigen, kopieren oder teilen.
 7. Optional eigene Kärtchen anlegen und passenden Profilen oder Klassen zuweisen.
 
 Wichtig dabei:
 
-- Eine Person kann mehrere Profile haben.
+- Eine Person kann mehrere Unterrichte haben.
 - Die Verteilung an Lernende läuft über die Server-Verbindung.
-- Die Lehrkräfte-App ist die tägliche Arbeitsoberfläche, das Plugin die zentrale Administration und Datenhaltung.
+- Die Lehrkräfte-App ist die tägliche Arbeitsoberfläche mit Wochenansicht, das Plugin die zentrale Administration und Datenhaltung.
 
 ## Onboarding für Lernende
 
-Für Lernende ist der Einstieg jetzt deutlich einfacher:
+Für Lernende ist der Einstieg:
 
 1. Lernenden-App öffnen oder als PWA installieren.
 2. In den Einstellungen `Mit Lehrkraft verbinden` öffnen.
 3. `Lernenden-ID` und `Verbindungscode` eingeben.
-4. Profil vom Server laden.
+4. Unterricht vom Server laden.
 5. Danach normal üben, Einträge speichern und mit dem Server synchronisieren.
 
 Nach dieser ersten Kopplung kennt die App:
 
 - Anzeigename
 - Instrument
-- Profilbezeichnung
+- Unterrichtsbezeichnung
 - Tagesziel
 - Server-Zuordnung
-- zugewiesene Ziel-Kärtchen
+- zugewiesene Kärtchen
 
 Danach genügt im Alltag der normale Server-Sync.
 
@@ -212,11 +253,11 @@ Danach genügt im Alltag der normale Server-Sync.
 Lernende:
 
 - tragen Übezeit, Schwerpunkt und optional eine Notiz ein
-- sehen Fortschritt, Serie und zugewiesene Ziel-Kärtchen
+- sehen Fortschritt, Serie und zugewiesene Kärtchen
 - synchronisieren ihre Daten mit dem WordPress-Server
-- können mehrere Profile auf einem Gerät verwalten und umschalten
+- können mehrere Unterrichte auf einem Gerät verwalten und umschalten
 
-Im verbundenen Modus ist das Profil führend. Das bedeutet:
+Im verbundenen Modus ist der Unterricht führend. Das bedeutet:
 
 - Instrument und Profilkontext kommen vom Server
 - nur zugewiesene Ziele werden angezeigt
@@ -226,21 +267,29 @@ Im verbundenen Modus ist das Profil führend. Das bedeutet:
 
 Die Lehrkräfte-App ist die Arbeitsoberfläche für Unterricht und Verwaltung. Dort können Lehrkräfte:
 
+- die aktuelle Woche pro eigenem Unterricht überblicken
 - Klassen pflegen
 - Lernende anlegen
-- mehrere Profile pro lernender Person verwalten
+- mehrere Unterrichte pro lernender Person verwalten
 - Kärtchen-Ziele erstellen
-- Kärtchen Klassen oder einzelnen Profilen zuweisen
+- Kärtchen Klassen oder einzelnen Unterrichten zuweisen
 - Daten mit dem WordPress-Server synchronisieren
 - Berichte und letzte Einträge als Gesprächsgrundlage nutzen
+
+Die Wochenansicht bündelt dabei für die laufende Woche:
+
+- aktive und noch offene Unterrichte
+- Minuten, Einträge und Notizen
+- letzte Aktivität pro Unterricht
+- direkt verliehene Kärtchen
 
 Die Lehrkräfte-App ist bewusst als eigene PWA getrennt von der Lernenden-App gedacht.
 
 ## Berichtswesen
 
-FleißTakt bietet weiterhin Berichte für Woche, Monat und Gesamtzeitraum. Diese Berichte können in der App angesehen, geteilt, kopiert oder heruntergeladen werden.
+FleißTakt bietet Berichte für Woche, Monat und Gesamtzeitraum. Diese Berichte können in der App angesehen, geteilt, kopiert oder heruntergeladen werden.
 
-Im neuen Zielbild gilt aber:
+Im Alltag gilt:
 
 - Für die tägliche Zusammenarbeit ist der Server-Sync der Hauptweg.
 - Die Lehrkräfte-App bekommt ihre Sicht primär über die WordPress-Zentrale.

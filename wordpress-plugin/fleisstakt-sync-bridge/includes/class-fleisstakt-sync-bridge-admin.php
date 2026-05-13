@@ -273,6 +273,7 @@ class FleissTakt_Sync_Bridge_Admin {
     $profiles = [];
     $assignments = [];
     $cards = [];
+    $card_awards = [];
     $reports = [];
     $feedback_overview = [];
     $settings = $this->repository->get_settings();
@@ -299,12 +300,20 @@ class FleissTakt_Sync_Bridge_Admin {
         break;
       case 'cards':
         $cards = $this->repository->list_cards();
+        $card_awards = $this->repository->list_card_awards();
         $teachers = $this->repository->list_teachers();
         $classes = $this->repository->list_classes();
         $profiles = $this->repository->list_profiles();
         break;
       case 'reports':
-        $reports = $this->repository->list_reports();
+        $students = $this->repository->list_students();
+        $profiles = $this->repository->list_profiles();
+        $classes = $this->repository->list_classes();
+        $reports = $this->repository->list_reports([
+          'student_id' => (int) ($_GET['report_student'] ?? 0),
+          'profile_id' => (int) ($_GET['report_profile'] ?? 0),
+          'class_id' => (int) ($_GET['report_class'] ?? 0),
+        ]);
         break;
       case 'feedback':
         $teachers = $this->repository->list_teachers();
@@ -318,6 +327,7 @@ class FleissTakt_Sync_Bridge_Admin {
         $profiles = $this->repository->list_profiles();
         $assignments = $this->repository->list_assignments();
         $cards = $this->repository->list_cards();
+        $card_awards = $this->repository->list_card_awards();
         $reports = $this->repository->list_reports();
         $feedback_overview = $this->repository->get_feedback_admin_overview();
         break;
@@ -336,7 +346,7 @@ class FleissTakt_Sync_Bridge_Admin {
       'teachers' => 'Lehrkräfte',
       'classes' => 'Klassen',
       'students' => 'Lernende',
-      'profiles' => 'Profile',
+      'profiles' => 'Unterrichte',
       'assignments' => 'Zuordnungen',
       'cards' => 'Kärtchen',
       'feedback' => 'Feedback',
@@ -346,7 +356,7 @@ class FleissTakt_Sync_Bridge_Admin {
 
     echo '<div class="wrap">';
     echo '<h1>FleißTakt Sync Bridge</h1>';
-    echo '<p>Zentrale Verwaltung für Lehrkräfte, Lernende, Instrument-Profile, Kärtchen und Berichte.</p>';
+    echo '<p>Zentrale Verwaltung für Lehrkräfte, Lernende, Unterrichte, Kärtchen und Berichte.</p>';
     $this->render_admin_notice();
     settings_errors('fleisstakt_sync_bridge');
     echo '<nav class="nav-tab-wrapper">';
@@ -373,10 +383,10 @@ class FleissTakt_Sync_Bridge_Admin {
         $this->render_assignments_tab($assignments, $teachers, $profiles);
         break;
       case 'cards':
-        $this->render_cards_tab($cards, $teachers, $classes, $profiles, $edit_card);
+        $this->render_cards_tab($cards, $card_awards, $teachers, $classes, $profiles, $edit_card);
         break;
       case 'reports':
-        $this->render_reports_tab($reports);
+        $this->render_reports_tab($reports, $students, $profiles, $classes);
         break;
       case 'feedback':
         $this->render_feedback_tab($feedback_overview, $active_teachers);
@@ -386,15 +396,16 @@ class FleissTakt_Sync_Bridge_Admin {
         break;
       case 'overview':
       default:
-        $this->render_overview_tab($teachers, $classes, $students, $profiles, $assignments, $cards, $reports, $feedback_overview, $settings);
+        $this->render_overview_tab($teachers, $classes, $students, $profiles, $assignments, $cards, $card_awards, $reports, $feedback_overview, $settings);
         break;
     }
 
     echo '</div>';
   }
 
-  private function render_overview_tab(array $teachers, array $classes, array $students, array $profiles, array $assignments, array $cards, array $reports, array $feedback_overview, array $settings): void {
+  private function render_overview_tab(array $teachers, array $classes, array $students, array $profiles, array $assignments, array $cards, array $card_awards, array $reports, array $feedback_overview, array $settings): void {
     echo '<h2>Übersicht</h2>';
+    echo '<p>Dieses Plugin ist die zentrale Verwaltungs- und Serverstelle für FleißTakt. Hier werden Lehrkräfte, Lernende, Unterrichte, Kärtchen und Berichte dauerhaft gehalten. Der normale Alltag mit Lernenden, Unterrichten und Kärtchen läuft anschließend in der Lehrkräfte-App.</p>';
     echo '<table class="widefat striped" style="max-width:960px"><tbody>';
     $feedback_round_count = 0;
     foreach ($feedback_overview as $teacher_feedback) {
@@ -404,7 +415,7 @@ class FleissTakt_Sync_Bridge_Admin {
       'Lehrkräfte' => count($teachers),
       'Klassen' => count($classes),
       'Lernende' => count($students),
-      'Profile' => count($profiles),
+      'Unterrichte' => count($profiles),
       'Zuordnungen' => count($assignments),
       'Kärtchen' => count($cards),
       'Feedback-Runden' => $feedback_round_count,
@@ -416,7 +427,53 @@ class FleissTakt_Sync_Bridge_Admin {
       echo '<tr><th style="width:220px">' . esc_html($label) . '</th><td>' . esc_html((string) $value) . '</td></tr>';
     }
     echo '</tbody></table>';
-    echo '<p>Profilpakete werden pro Instrument-Profil erzeugt. Die Lernenden-App importiert dieses Paket einmal und kann danach Berichte online senden.</p>';
+    echo '<h3>Server und Sync</h3>';
+    echo '<table class="widefat striped" style="max-width:960px"><tbody>';
+    $sync_rows = [
+      'Plugin-Version' => defined('FLEISSTAKT_SYNC_BRIDGE_VERSION') ? FLEISSTAKT_SYNC_BRIDGE_VERSION : '',
+      'Server-URL' => $settings['sync_base_url'] ?? '',
+      'Lernenden-App' => $settings['learner_app_url'] ?? '',
+      'Berichtsaufbewahrung' => (int) ($settings['retention_days'] ?? 180) . ' Tage',
+      'Übekategorien' => implode(' · ', $settings['practice_categories'] ?? []),
+      'Direkt verliehene Kärtchen' => count($card_awards),
+    ];
+    foreach ($sync_rows as $label => $value) {
+      echo '<tr><th style="width:220px">' . esc_html($label) . '</th><td>' . esc_html((string) $value) . '</td></tr>';
+    }
+    echo '</tbody></table>';
+    echo '<h3>Onboarding in 4 Schritten</h3>';
+    echo '<ol style="max-width:960px;line-height:1.6">';
+    echo '<li>Lehrkraft im Plugin anlegen und Serverkontext prüfen.</li>';
+    echo '<li>Lehrkräfte-App installieren und dort den Lehrkräfte-Key aus dem Plugin hinterlegen.</li>';
+    echo '<li>Lernende, Unterrichte und Kärtchen in der Lehrkräfte-App pflegen und einmal vollständig synchronisieren.</li>';
+    echo '<li>Lernende koppeln das Gerät per QR-Code oder mit Lernenden-ID und Verbindungscode.</li>';
+    echo '</ol>';
+    echo '<p>Profilpakete bleiben nur als Fallback für Ausnahmefälle gedacht.</p>';
+    echo '<h3>Zuletzt direkt verliehen</h3>';
+    if (!$card_awards) {
+      echo '<p>Noch keine direkt verliehenen Kärtchen vorhanden.</p>';
+      return;
+    }
+
+    echo '<table class="widefat striped" style="max-width:1100px"><thead><tr><th>Kärtchen</th><th>Unterricht</th><th>Lehrkraft</th><th>Notiz</th><th>Verliehen am</th></tr></thead><tbody>';
+    foreach (array_slice($card_awards, 0, 5) as $award) {
+      $learner_label = trim((string) ($award['student_display_name'] ?? ''));
+      $profile_bits = array_filter([
+        $award['profile_label'] ?? '',
+        $award['instrument'] ?? '',
+      ], static fn($value): bool => (string) $value !== '');
+      if ($profile_bits) {
+        $learner_label .= ' · ' . implode(' · ', $profile_bits);
+      }
+      echo '<tr>';
+      echo '<td>' . esc_html((string) ($award['card_title'] ?? '')) . '</td>';
+      echo '<td>' . esc_html($learner_label) . '</td>';
+      echo '<td>' . esc_html((string) ($award['teacher_name'] ?? '')) . '</td>';
+      echo '<td>' . esc_html($this->format_award_note((string) ($award['note'] ?? ''))) . '</td>';
+      echo '<td>' . esc_html($this->format_datetime((string) ($award['awarded_at'] ?? ''))) . '</td>';
+      echo '</tr>';
+    }
+    echo '</tbody></table>';
   }
 
   private function render_feedback_tab(array $feedback_overview, array $teachers): void {
@@ -535,6 +592,7 @@ class FleissTakt_Sync_Bridge_Admin {
 
   private function render_classes_tab(array $classes, ?array $edit_class): void {
     echo '<h2>Klassen</h2>';
+    echo '<p>Klassen werden im Alltag meist in der Lehrkräfte-App angelegt und dann zum Server synchronisiert. Hier im Plugin siehst du zusätzlich, welche Lehrkräfte, Lernenden und Unterrichte an einer Klasse hängen.</p>';
     $this->render_form_start('save_class');
     echo '<input type="hidden" name="class_id" value="' . esc_attr((string) ($edit_class['id'] ?? 0)) . '" />';
     echo '<table class="form-table"><tbody>';
@@ -545,10 +603,13 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '</form>';
 
     echo '<h3>Vorhandene Klassen</h3>';
-    echo '<table class="widefat striped"><thead><tr><th>Name</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>';
+    echo '<table class="widefat striped"><thead><tr><th>Name</th><th>Lehrkräfte</th><th>Lernende</th><th>Unterrichte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>';
     foreach ($classes as $class) {
       echo '<tr>';
       echo '<td>' . esc_html($class['class_name']) . '</td>';
+      echo '<td>' . esc_html((string) (($class['teacher_names'] ?? '') !== '' ? $class['teacher_names'] : 'Noch nicht zugeordnet')) . '</td>';
+      echo '<td>' . esc_html((string) (int) ($class['student_count'] ?? 0)) . '</td>';
+      echo '<td>' . esc_html((string) (int) ($class['profile_count'] ?? 0)) . '</td>';
       echo '<td>' . esc_html($class['status']) . '</td>';
       echo '<td>' . $this->edit_link('classes', 'edit_class', (int) $class['id']) . ' ' . $this->delete_inline_form('delete_class', 'class_id', (int) $class['id'], 'Löschen') . '</td>';
       echo '</tr>';
@@ -558,6 +619,7 @@ class FleissTakt_Sync_Bridge_Admin {
 
   private function render_students_tab(array $students, ?array $edit_student): void {
     echo '<h2>Lernende</h2>';
+    echo '<p>Hier werden die Stammdaten der Person gepflegt. Instrument, Tagesziel, Lernenden-ID und Verbindungscode gehören erst zum jeweiligen Profil.</p>';
     $this->render_form_start('save_student');
     echo '<input type="hidden" name="student_id" value="' . esc_attr((string) ($edit_student['id'] ?? 0)) . '" />';
     echo '<table class="form-table"><tbody>';
@@ -590,7 +652,8 @@ class FleissTakt_Sync_Bridge_Admin {
   }
 
   private function render_profiles_tab(array $profiles, array $students, array $classes, ?array $edit_profile): void {
-    echo '<h2>Instrument-Profile</h2>';
+    echo '<h2>Unterrichte</h2>';
+    echo '<p>Ein Unterricht steht für genau einen Lernweg, also zum Beispiel <em>Klavier bei Frau Beispiel</em> oder <em>Violine bei Herrn Beispiel</em>. Lernenden-ID, Verbindungscode und Upload-Token hängen immer an diesem Unterricht. Die zuständige Lehrkraft wird nicht hier im Formular gesetzt, sondern über den Tab <em>Zuordnungen</em> verknüpft.</p>';
     $this->render_form_start('save_profile');
     echo '<input type="hidden" name="profile_id" value="' . esc_attr((string) ($edit_profile['id'] ?? 0)) . '" />';
     echo '<table class="form-table"><tbody>';
@@ -606,31 +669,36 @@ class FleissTakt_Sync_Bridge_Admin {
     $this->render_select_row('Klasse', 'class_id', $class_options, (string) ($edit_profile['class_id'] ?? '0'));
     $this->render_text_row('Instrument', 'instrument', $edit_profile['instrument'] ?? '');
     $this->render_text_row(
-      'Profilbezeichnung',
+      'Unterrichtsbezeichnung',
       'profile_label',
       $edit_profile['profile_label'] ?? '',
       'Zum Beispiel: Klavier, Violine oder Klavier Mittwoch.'
     );
     $this->render_number_row('Tagesziel in Minuten', 'goal_minutes', (int) ($edit_profile['goal_minutes'] ?? 15), 5, 240);
     $this->render_select_row('Status', 'status', ['active' => 'Aktiv', 'inactive' => 'Inaktiv'], $edit_profile['status'] ?? 'active');
-    echo '<tr><th>Upload-Token neu erzeugen</th><td><label><input type="checkbox" name="regenerate_upload_token" value="1" /> Nur setzen, wenn das Profilpaket neu ausgegeben werden soll.</label></td></tr>';
+    echo '<tr><th>Kopplung dieses Unterrichts zurücksetzen</th><td><label><input type="checkbox" name="regenerate_upload_token" value="1" /> Nur im Ausnahmefall setzen, wenn dieser Unterricht auf Geräten neu gekoppelt werden soll.</label><p class="description">Dabei wird intern ein neuer technischer Schlüssel für die Serverkopplung erzeugt. Danach sollten Lernenden-ID und Verbindungscode erneut über die Lehrkräfte-App weitergegeben werden.</p></td></tr>';
     echo '</tbody></table>';
-    submit_button($edit_profile ? 'Profil aktualisieren' : 'Profil anlegen');
+    submit_button($edit_profile ? 'Unterricht aktualisieren' : 'Unterricht anlegen');
     echo '</form>';
 
-    echo '<h3>Vorhandene Profile</h3>';
-    echo '<table class="widefat striped"><thead><tr><th>Lernende</th><th>Profil</th><th>App-ID</th><th>Upload-Token</th><th>Aktionen</th></tr></thead><tbody>';
+    echo '<h3>Vorhandene Unterrichte</h3>';
+    echo '<p>Im Alltag reicht meist die Lernenden-ID plus Verbindungscode aus der Lehrkräfte-App. Das Profilpaket ist der Ausnahmeweg für Sonderfälle oder Geräte, bei denen die direkte Kopplung nicht klappt. Die Spalte <em>Zugeordnete Lehrkräfte</em> kommt aus dem Tab <em>Zuordnungen</em>.</p>';
+    echo '<table class="widefat striped"><thead><tr><th>Lernende</th><th>Unterricht</th><th>Klasse</th><th>Zugeordnete Lehrkräfte</th><th>Zuordnungen</th><th>Lernenden-ID</th><th>Upload-Token</th><th>Aktionen</th></tr></thead><tbody>';
     foreach ($profiles as $profile) {
       $download_url = wp_nonce_url(
         admin_url('admin.php?page=fleisstakt-sync-bridge&tab=profiles&fleisstakt_download_profile_package=' . (int) $profile['id']),
         'fleisstakt_download_profile_package'
       );
+      $assignment_url = admin_url('admin.php?page=fleisstakt-sync-bridge&tab=assignments&student_profile_id=' . (int) $profile['id']);
       echo '<tr>';
       echo '<td>' . esc_html($profile['student_display_name']) . '</td>';
       echo '<td>' . esc_html($profile['profile_label']) . ' · ' . esc_html($profile['instrument']) . '</td>';
+      echo '<td>' . esc_html((string) ($profile['class_name'] ?? 'Ohne Klasse')) . '</td>';
+      echo '<td>' . esc_html((string) (($profile['teacher_names'] ?? '') !== '' ? $profile['teacher_names'] : 'Noch nicht zugeordnet')) . '</td>';
+      echo '<td>' . esc_html((string) (int) ($profile['assignment_count'] ?? 0)) . ' <a class="button button-small" href="' . esc_url($assignment_url) . '">Zuordnungen bearbeiten</a></td>';
       echo '<td><code>' . esc_html($profile['app_student_id']) . '</code></td>';
       echo '<td><code>' . esc_html($profile['upload_token']) . '</code></td>';
-      echo '<td>' . $this->edit_link('profiles', 'edit_profile', (int) $profile['id']) . ' <a class="button button-secondary" href="' . esc_url($download_url) . '">Profilpaket</a> ' . $this->delete_inline_form('delete_profile', 'profile_id', (int) $profile['id'], 'Löschen') . '</td>';
+      echo '<td>' . $this->edit_link('profiles', 'edit_profile', (int) $profile['id']) . ' <a class="button button-secondary" href="' . esc_url($download_url) . '">Ausnahmeweg: Profilpaket</a> ' . $this->delete_inline_form('delete_profile', 'profile_id', (int) $profile['id'], 'Löschen') . '</td>';
       echo '</tr>';
     }
     echo '</tbody></table>';
@@ -648,8 +716,9 @@ class FleissTakt_Sync_Bridge_Admin {
     foreach ($profiles as $profile) {
       $profile_options[(string) $profile['id']] = $profile['student_display_name'] . ' · ' . $profile['profile_label'];
     }
+    $preselected_profile_id = sanitize_text_field((string) ($_GET['student_profile_id'] ?? ''));
     $this->render_select_row('Lehrkraft', 'teacher_id', $teacher_options, '');
-    $this->render_select_row('Profil', 'student_profile_id', $profile_options, '');
+    $this->render_select_row('Unterricht', 'student_profile_id', $profile_options, $preselected_profile_id);
     $this->render_text_row('Rollenbezeichnung', 'role_label', 'Lehrkraft');
     echo '<tr><th>Primär</th><td><label><input type="checkbox" name="is_primary" value="1" checked /> Primäre Zuständigkeit</label></td></tr>';
     echo '</tbody></table>';
@@ -657,7 +726,7 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '</form>';
 
     echo '<h3>Vorhandene Zuordnungen</h3>';
-    echo '<table class="widefat striped"><thead><tr><th>Lehrkraft</th><th>Lernprofil</th><th>Rolle</th><th>Primär</th><th>Aktionen</th></tr></thead><tbody>';
+    echo '<table class="widefat striped"><thead><tr><th>Lehrkraft</th><th>Unterricht</th><th>Rolle</th><th>Primär</th><th>Aktionen</th></tr></thead><tbody>';
     foreach ($assignments as $assignment) {
       echo '<tr>';
       echo '<td>' . esc_html($assignment['teacher_name']) . '</td>';
@@ -670,8 +739,9 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '</tbody></table>';
   }
 
-  private function render_cards_tab(array $cards, array $teachers, array $classes, array $profiles, ?array $edit_card): void {
+  private function render_cards_tab(array $cards, array $card_awards, array $teachers, array $classes, array $profiles, ?array $edit_card): void {
     echo '<h2>Kärtchenbibliothek</h2>';
+    echo '<p>Kärtchen können automatisch über Zielbedingungen freigeschaltet oder später direkt mit persönlicher Notiz verliehen werden. Für Kärtchen ohne automatische Prüfung eignet sich der Regeltyp <strong>Keine</strong>.</p>';
     $settings = $this->repository->get_settings();
     $practice_categories = $settings['practice_categories'] ?? FleissTakt_Sync_Bridge_Repository::DEFAULT_PRACTICE_CATEGORIES;
     $edit_rule_meta = json_decode((string) ($edit_card['rule_meta'] ?? ''), true);
@@ -706,7 +776,8 @@ class FleissTakt_Sync_Bridge_Admin {
       $rule_category_options[(string) $category] = (string) $category;
     }
     $this->render_select_row('Regel-Kategorie', 'rule_category', $rule_category_options, $edit_rule_category);
-    echo '<tr><th></th><td><p class="description">Bei "Keine" wird das Kärtchen nicht automatisch freigeschaltet. Es eignet sich für direkte Belohnungen mit persönlicher Notiz.</p></td></tr>';
+    echo '<tr><th></th><td><p class="description">Bei "Keine" wird das Kärtchen nicht automatisch freigeschaltet. Es eignet sich für direkt verliehene Kärtchen mit persönlicher Notiz.</p></td></tr>';
+    echo '<tr><th>Regelhilfe</th><td><p class="description">Zielbedingung beschreibt, <strong>was</strong> geprüft wird. Zielwert beschreibt, <strong>ab welcher Zahl</strong> das Kärtchen freigeschaltet wird. Beispiel: <em>Wochenminuten + 60</em> bedeutet insgesamt 60 Minuten in einer Woche, nicht 60 einzelne Einträge.</p></td></tr>';
     $assignment_type = $edit_card['assignment_type'] ?? 'all';
     if (!in_array($assignment_type, ['all', 'class', 'student'], true)) {
       $assignment_type = 'all';
@@ -726,7 +797,7 @@ class FleissTakt_Sync_Bridge_Admin {
       $assignment_target_options[(string) $profile['app_student_id']] = 'Person · ' . $profile['student_display_name'] . ' · ' . $profile['profile_label'] . ' · ' . $profile['instrument'];
     }
     $this->render_select_row('Zielobjekt', 'assignment_target', $assignment_target_options, $assignment_target);
-    echo '<tr><th></th><td><p class="description">Bei "Für alle" wird dieses Feld ignoriert. Für Klassen nutzt das Plugin die Klassen-ID, für einzelne Personen die App-ID des Instrument-Profils.</p></td></tr>';
+    echo '<tr><th></th><td><p class="description">Bei "Für alle" wird dieses Feld ignoriert. Für Klassen nutzt das Plugin die Klassen-ID, für einzelne Personen die App-ID des zugehörigen Unterrichts.</p></td></tr>';
     $this->render_text_row('Farbwelt', 'accent', $edit_card['accent'] ?? 'gold');
     $this->render_text_row('Symbol', 'symbol', $edit_card['symbol'] ?? '✦');
     $this->render_text_row('Seltenheit', 'rarity', $edit_card['rarity'] ?? 'Basis');
@@ -736,6 +807,9 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '</form>';
 
     echo '<h3>Vorhandene Kärtchen</h3>';
+    $selected_card_uuid = sanitize_text_field((string) ($_GET['award_card'] ?? ($edit_card['card_uuid'] ?? '')));
+    $selected_teacher_id = sanitize_text_field((string) ($_GET['award_teacher'] ?? ''));
+    $selected_profile_id = sanitize_text_field((string) ($_GET['award_profile'] ?? ''));
     $class_labels = [];
     foreach ($classes as $class) {
       $class_labels[(string) $class['class_uuid']] = $class['class_name'];
@@ -782,30 +856,202 @@ class FleissTakt_Sync_Bridge_Admin {
       echo '<td>' . esc_html($assignment_label) . '</td>';
       echo '<td>' . (int) ($card['award_count'] ?? 0) . '</td>';
       echo '<td>' . esc_html($card['status']) . '</td>';
-      echo '<td>' . $this->edit_link('cards', 'edit_card', (int) $card['id']) . ' ' . $this->delete_inline_form('delete_card', 'card_id', (int) $card['id'], 'Löschen') . '</td>';
+      $award_link = admin_url(
+        'admin.php?page=fleisstakt-sync-bridge&tab=cards&edit_card=' . (int) $card['id'] . '&award_card=' . rawurlencode((string) ($card['card_uuid'] ?? ''))
+      );
+      echo '<td>' . $this->edit_link('cards', 'edit_card', (int) $card['id']) . ' <a class="button button-secondary" href="' . esc_url($award_link) . '">Vergaben</a> ' . $this->delete_inline_form('delete_card', 'card_id', (int) $card['id'], 'Löschen') . '</td>';
+      echo '</tr>';
+    }
+    echo '</tbody></table>';
+
+    $filtered_awards = array_values(array_filter($card_awards, function (array $award) use ($selected_card_uuid, $selected_teacher_id, $selected_profile_id): bool {
+      if ($selected_card_uuid !== '' && (string) ($award['card_uuid'] ?? '') !== $selected_card_uuid) {
+        return false;
+      }
+      if ($selected_teacher_id !== '' && (string) ($award['teacher_id'] ?? '') !== $selected_teacher_id) {
+        return false;
+      }
+      if ($selected_profile_id !== '' && (string) ($award['app_student_id'] ?? '') !== $selected_profile_id) {
+        return false;
+      }
+      return true;
+    }));
+
+    echo '<h3>' . esc_html($selected_card_uuid !== '' ? 'Vergabeverlauf für das ausgewählte Kärtchen' : 'Direkte Vergaben im Überblick') . '</h3>';
+    echo '<p>Hier siehst du direkt verliehene Kärtchen mit Unterricht, Lehrkraft, Notiz und Verleihzeit. Über die Filter lässt sich der Verlauf schnell eingrenzen.</p>';
+    echo '<form method="get" style="margin:12px 0 16px">';
+    echo '<input type="hidden" name="page" value="fleisstakt-sync-bridge" />';
+    echo '<input type="hidden" name="tab" value="cards" />';
+    if (!empty($edit_card['id'])) {
+      echo '<input type="hidden" name="edit_card" value="' . esc_attr((string) $edit_card['id']) . '" />';
+    }
+    echo '<table class="form-table" style="max-width:960px"><tbody>';
+    $award_card_options = ['' => 'Alle Kärtchen'];
+    foreach ($cards as $card) {
+      $award_card_options[(string) ($card['card_uuid'] ?? '')] = (string) ($card['title'] ?? 'Kärtchen');
+    }
+    $award_teacher_options = ['' => 'Alle Lehrkräfte'];
+    foreach ($teachers as $teacher) {
+      $award_teacher_options[(string) $teacher['id']] = (string) $teacher['display_name'];
+    }
+    $award_profile_options = ['' => 'Alle Unterrichte'];
+    foreach ($profiles as $profile) {
+      $award_profile_options[(string) $profile['app_student_id']] = $this->build_profile_label($profile);
+    }
+    $this->render_select_row('Kärtchen', 'award_card', $award_card_options, $selected_card_uuid);
+    $this->render_select_row('Lehrkraft', 'award_teacher', $award_teacher_options, $selected_teacher_id);
+    $this->render_select_row('Unterricht', 'award_profile', $award_profile_options, $selected_profile_id);
+    echo '</tbody></table>';
+    submit_button('Filter anwenden', 'secondary', '', false);
+    echo ' <a class="button button-secondary" href="' . esc_url(admin_url('admin.php?page=fleisstakt-sync-bridge&tab=cards')) . '">Filter zurücksetzen</a>';
+    echo '</form>';
+
+    if (!$card_awards) {
+    echo '<p>Noch keine direkt verliehenen Kärtchen vorhanden.</p>';
+      return;
+    }
+
+    if (!$filtered_awards) {
+      echo '<p>Für diese Auswahl gibt es noch keine direkten Vergaben.</p>';
+      return;
+    }
+
+    echo '<p><strong>' . esc_html((string) count($filtered_awards)) . '</strong> passende direkte Vergaben gefunden.</p>';
+    echo '<table class="widefat striped"><thead><tr><th>Kärtchen</th><th>Unterricht</th><th>Lehrkraft</th><th>Notiz</th><th>Verliehen am</th></tr></thead><tbody>';
+    foreach (array_slice($filtered_awards, 0, 50) as $award) {
+      echo '<tr>';
+      echo '<td>' . esc_html((string) ($award['card_title'] ?? '')) . '</td>';
+      echo '<td>' . esc_html($this->build_profile_label($award)) . '</td>';
+      echo '<td>' . esc_html((string) ($award['teacher_name'] ?? '')) . '</td>';
+      echo '<td>' . esc_html($this->format_award_note((string) ($award['note'] ?? ''))) . '</td>';
+      echo '<td>' . esc_html($this->format_datetime((string) ($award['awarded_at'] ?? ''))) . '</td>';
       echo '</tr>';
     }
     echo '</tbody></table>';
   }
 
-  private function render_reports_tab(array $reports): void {
+  private function render_reports_tab(array $reports, array $students, array $profiles, array $classes): void {
+    $selected_student_id = sanitize_text_field((string) ($_GET['report_student'] ?? ''));
+    $selected_profile_id = sanitize_text_field((string) ($_GET['report_profile'] ?? ''));
+    $selected_class_id = sanitize_text_field((string) ($_GET['report_class'] ?? ''));
+
+    $student_options = ['' => 'Alle Lernenden'];
+    foreach ($students as $student) {
+      $student_options[(string) $student['id']] = (string) ($student['display_name'] ?? '');
+    }
+
+    $profile_options = ['' => 'Alle Unterrichte'];
+    foreach ($profiles as $profile) {
+      $profile_options[(string) $profile['id']] = $this->build_profile_label($profile);
+    }
+
+    $class_options = ['' => 'Alle Klassen'];
+    foreach ($classes as $class) {
+      $class_options[(string) $class['id']] = (string) ($class['class_name'] ?? '');
+    }
+
     echo '<h2>Berichte</h2>';
-    echo '<table class="widefat striped"><thead><tr><th>Lernprofil</th><th>Zeitraum</th><th>Minuten</th><th>Gesendet</th><th>Empfangen</th><th>Aktionen</th></tr></thead><tbody>';
+    echo '<p><strong>Gesendet</strong> ist der Zeitpunkt aus der Lernenden-App. <strong>Empfangen</strong> zeigt, wann WordPress den Bericht tatsächlich gespeichert hat.</p>';
+    echo '<form method="get" style="margin:12px 0 16px 0">';
+    echo '<input type="hidden" name="page" value="fleisstakt-sync-bridge" />';
+    echo '<input type="hidden" name="tab" value="reports" />';
+    echo '<table class="form-table"><tbody><tr>';
+    echo '<td style="padding-right:12px;vertical-align:top">';
+    echo '<label><strong>Lernende</strong><br />';
+    echo '<select name="report_student">';
+    foreach ($student_options as $value => $label) {
+      echo '<option value="' . esc_attr((string) $value) . '"' . selected($selected_student_id, (string) $value, false) . '>' . esc_html((string) $label) . '</option>';
+    }
+    echo '</select></label></td>';
+    echo '<td style="padding-right:12px;vertical-align:top">';
+    echo '<label><strong>Unterricht</strong><br />';
+    echo '<select name="report_profile">';
+    foreach ($profile_options as $value => $label) {
+      echo '<option value="' . esc_attr((string) $value) . '"' . selected($selected_profile_id, (string) $value, false) . '>' . esc_html((string) $label) . '</option>';
+    }
+    echo '</select></label></td>';
+    echo '<td style="padding-right:12px;vertical-align:top">';
+    echo '<label><strong>Klasse</strong><br />';
+    echo '<select name="report_class">';
+    foreach ($class_options as $value => $label) {
+      echo '<option value="' . esc_attr((string) $value) . '"' . selected($selected_class_id, (string) $value, false) . '>' . esc_html((string) $label) . '</option>';
+    }
+    echo '</select></label></td>';
+    echo '<td style="vertical-align:bottom">';
+    submit_button('Filtern', 'secondary', '', false);
+    echo ' <a class="button" href="' . esc_url(admin_url('admin.php?page=fleisstakt-sync-bridge&tab=reports')) . '">Zurücksetzen</a>';
+    echo '</td>';
+    echo '</tr></tbody></table>';
+    echo '</form>';
+    echo '<table class="widefat striped"><thead><tr><th>Unterricht</th><th>Zeitraum</th><th>Minuten</th><th>Gesendet</th><th>Empfangen</th><th>Inhalt</th><th>Aktionen</th></tr></thead><tbody>';
     foreach ($reports as $report) {
+      $content_html = $this->render_report_content_preview((string) ($report['payload_json'] ?? ''));
       echo '<tr>';
       echo '<td>' . esc_html($report['student_display_name']) . ' · ' . esc_html($report['profile_label']) . ' · ' . esc_html($report['instrument']) . '</td>';
       echo '<td>' . esc_html($report['report_label']) . '</td>';
       echo '<td>' . (int) $report['report_minutes'] . '</td>';
-      echo '<td>' . esc_html($report['exported_at']) . '</td>';
-      echo '<td>' . esc_html($report['received_at']) . '</td>';
+      echo '<td>' . esc_html($this->format_datetime((string) ($report['exported_at'] ?? ''))) . '</td>';
+      echo '<td>' . esc_html($this->format_datetime((string) ($report['received_at'] ?? ''))) . '</td>';
+      echo '<td>' . $content_html . '</td>';
       echo '<td>' . $this->delete_inline_form('delete_report', 'report_id', (int) $report['id'], 'Löschen') . '</td>';
       echo '</tr>';
     }
     echo '</tbody></table>';
   }
 
+  private function render_report_content_preview(string $payload_json): string {
+    $decoded = json_decode($payload_json, true);
+    if (!is_array($decoded)) {
+      return '<span>Kein lesbarer Inhalt</span>';
+    }
+
+    $report = is_array($decoded['report'] ?? null) ? $decoded['report'] : [];
+    $entries = is_array($report['entries'] ?? null) ? $report['entries'] : [];
+    $unlocked_cards = is_array($report['unlockedCards'] ?? null) ? $report['unlockedCards'] : [];
+    $minutes = (int) ($report['minutes'] ?? 0);
+    $streak = (int) ($report['streak'] ?? 0);
+    $noted_count = (int) ($report['notedCount'] ?? 0);
+    $unique_days = (int) ($report['uniqueDaysCount'] ?? 0);
+
+    ob_start();
+    echo '<details style="min-width:280px">';
+    echo '<summary>Einträge und Kennzahlen ansehen</summary>';
+    echo '<div style="margin-top:8px">';
+    echo '<p><strong>Überblick:</strong> ' . esc_html((string) count($entries)) . ' Einträge · ' . esc_html((string) $minutes) . ' Minuten · ' . esc_html((string) $streak) . ' Tage Serie · ' . esc_html((string) $unique_days) . ' Übetage · ' . esc_html((string) $noted_count) . ' Einträge mit Notiz</p>';
+
+    if ($unlocked_cards) {
+      $card_titles = array_values(array_filter(array_map(
+        static fn($card): string => trim((string) ($card['title'] ?? '')),
+        $unlocked_cards
+      )));
+      if ($card_titles) {
+        echo '<p><strong>Freigeschaltete Kärtchen:</strong> ' . esc_html(implode(', ', $card_titles)) . '</p>';
+      }
+    }
+
+    if ($entries) {
+      echo '<table class="widefat striped" style="margin-top:8px"><thead><tr><th>Datum</th><th>Minuten</th><th>Schwerpunkt</th><th>Notiz</th></tr></thead><tbody>';
+      foreach ($entries as $entry) {
+        echo '<tr>';
+        echo '<td>' . esc_html((string) ($entry['date'] ?? '—')) . '</td>';
+        echo '<td>' . esc_html((string) ((int) ($entry['minutes'] ?? 0))) . '</td>';
+        echo '<td>' . esc_html((string) ($entry['category'] ?? '—')) . '</td>';
+        echo '<td>' . esc_html($this->format_award_note((string) ($entry['note'] ?? ''))) . '</td>';
+        echo '</tr>';
+      }
+      echo '</tbody></table>';
+    } else {
+      echo '<p>Keine Einträge im Bericht enthalten.</p>';
+    }
+
+    echo '</div>';
+    echo '</details>';
+    return (string) ob_get_clean();
+  }
+
   private function render_settings_tab(array $settings): void {
     echo '<h2>Einstellungen</h2>';
+    echo '<p>Hier legst du den Serverkontext fest, den beide PWAs verwenden. Änderungen an Basis-URL, Lernenden-App-URL oder Kategorien wirken sich direkt auf Kopplung und Synchronisation aus.</p>';
     $this->render_form_start('save_settings');
     echo '<table class="form-table"><tbody>';
     $this->render_text_row('Seitenlabel', 'site_label', $settings['site_label'] ?? get_bloginfo('name'));
@@ -825,6 +1071,7 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '<tr><td><code>[fleisstakt_parent_info]</code></td><td>Öffentliche Seite für Eltern</td><td>Ruhige Erklärung, wie FleißTakt im Alltag begleitet</td></tr>';
     echo '</tbody></table>';
     echo '<p>Lege in WordPress eine normale Seite an und füge dort einfach den gewünschten Shortcode ein.</p>';
+    echo '<p>Für den Alltag reicht meist eine öffentliche Lernenden-Seite mit App-QR und kurzem Kopplungs-Hinweis. Die eigentliche Profilzuordnung erfolgt trotzdem immer im Plugin und in der Lehrkräfte-App.</p>';
 
     $backup_export_url = wp_nonce_url(
       admin_url('admin.php?page=fleisstakt-sync-bridge&tab=settings&fleisstakt_export_backup=1'),
@@ -854,12 +1101,43 @@ class FleissTakt_Sync_Bridge_Admin {
       return 'Offen';
     }
     if ($start && $end) {
-      return gmdate('d.m.Y', $start) . ' bis ' . gmdate('d.m.Y', $end);
+      return wp_date('d.m.Y', $start) . ' bis ' . wp_date('d.m.Y', $end);
     }
     if ($start) {
-      return 'Ab ' . gmdate('d.m.Y', $start);
+      return 'Ab ' . wp_date('d.m.Y', $start);
     }
-    return 'Bis ' . gmdate('d.m.Y', $end);
+    return 'Bis ' . wp_date('d.m.Y', $end);
+  }
+
+  private function format_datetime(string $value): string {
+    if ($value === '') {
+      return '—';
+    }
+
+    $timestamp = strtotime($value);
+    if (!$timestamp) {
+      return $value;
+    }
+
+    return wp_date('d.m.Y H:i', $timestamp);
+  }
+
+  private function format_award_note(string $note): string {
+    $note = trim($note);
+    return $note !== '' ? $note : 'Ohne Notiz';
+  }
+
+  private function build_profile_label(array $profile_or_award): string {
+    $label = trim((string) ($profile_or_award['student_display_name'] ?? ''));
+    $parts = array_filter([
+      $profile_or_award['profile_label'] ?? '',
+      $profile_or_award['instrument'] ?? '',
+      $profile_or_award['app_student_id'] ?? '',
+    ], static fn($value): bool => (string) $value !== '');
+    if ($parts) {
+      $label .= ($label !== '' ? ' · ' : '') . implode(' · ', $parts);
+    }
+    return $label;
   }
 
   private function render_form_start(string $action, bool $multipart = false): void {
@@ -925,7 +1203,7 @@ class FleissTakt_Sync_Bridge_Admin {
 
   private function download_backup(): void {
     $backup = $this->repository->export_backup_payload();
-    $filename = 'fleisstakt-plugin-backup-' . gmdate('Ymd-His') . '.json';
+    $filename = 'fleisstakt-plugin-backup-' . wp_date('Ymd-His') . '.json';
 
     nocache_headers();
     header('Content-Type: application/json; charset=utf-8');
@@ -960,8 +1238,8 @@ class FleissTakt_Sync_Bridge_Admin {
       'class_deleted' => ['success', 'Klasse gelöscht.'],
       'student_saved' => ['success', 'Lernende gespeichert.'],
       'student_deleted' => ['success', 'Lernende gelöscht.'],
-      'profile_saved' => ['success', 'Instrument-Profil gespeichert.'],
-      'profile_deleted' => ['success', 'Instrument-Profil gelöscht.'],
+      'profile_saved' => ['success', 'Unterricht gespeichert.'],
+      'profile_deleted' => ['success', 'Unterricht gelöscht.'],
       'assignment_saved' => ['success', 'Zuordnung gespeichert.'],
       'assignment_deleted' => ['success', 'Zuordnung gelöscht.'],
       'card_saved' => ['success', 'Kärtchen gespeichert.'],

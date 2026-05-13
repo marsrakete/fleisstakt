@@ -235,19 +235,58 @@ button {
   line-height: 1.45;
 }
 
+.teacher-sync-summary,
+.teacher-rule-helper,
+.teacher-award-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.teacher-sync-summary p,
+.teacher-sync-summary small,
+.teacher-rule-helper p,
+.teacher-rule-helper small,
+.teacher-award-summary-card span {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.teacher-sync-summary-ok {
+  border-color: rgba(23, 108, 67, 0.22);
+  background: rgba(23, 108, 67, 0.08);
+}
+
+.teacher-sync-summary-pending,
+.teacher-sync-summary-running {
+  border-color: rgba(242, 111, 61, 0.24);
+  background: rgba(242, 111, 61, 0.1);
+}
+
+.teacher-sync-summary-error {
+  border-color: rgba(166, 61, 47, 0.24);
+  background: rgba(255, 244, 242, 0.92);
+}
+
 .teacher-settings-block label {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   color: var(--ink-soft);
   font-size: 0.92rem;
+  align-content: start;
 }
 
 .teacher-detail-field {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   min-width: min(100%, 18rem);
   color: var(--ink-soft);
   font-size: 0.92rem;
+  align-content: start;
 }
 
 .teacher-detail-field input {
@@ -347,6 +386,17 @@ button {
 
 .teacher-sync-progress-toast {
   margin-bottom: 12px;
+}
+
+.teacher-award-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.teacher-award-summary-card strong {
+  font-size: 1rem;
 }
 
 .teacher-settings-close {
@@ -554,6 +604,8 @@ button {
 .detail-grid,
 .roster-list,
 .teacher-entry-list,
+.teacher-week-list,
+.teacher-week-legend,
 .detail-metrics,
 .workspace-card-grid,
 .card-preview-grid,
@@ -673,6 +725,46 @@ button {
   color: var(--ink-soft);
 }
 
+.teacher-student-name-block {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.teacher-student-name-block p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.teacher-student-formal-name,
+.teacher-student-meta-note {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.card-library-preview {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  gap: 0;
+  overflow: visible;
+}
+
+.card-library-preview .card-preview {
+  width: 100%;
+}
+
+.card-library-preview.is-active .card-preview {
+  outline: 2px solid rgba(242, 111, 61, 0.42);
+  outline-offset: 2px;
+  box-shadow: 0 14px 30px rgba(73, 50, 30, 0.12);
+}
+
+.card-library-preview .card-preview p,
+.card-library-preview .card-preview small {
+  margin: 0;
+}
+
 .workspace-hero,
 .detail-header {
   display: flex;
@@ -749,13 +841,29 @@ button {
 }
 
 .detail-card form,
-.detail-card label,
 .card-editor-form,
 .card-editor-grid,
 .teacher-inline-actions,
 .detail-metrics {
   display: grid;
   gap: 10px;
+}
+
+.detail-card form {
+  gap: 14px;
+}
+
+.detail-card label {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+
+.card-editor-form label,
+.card-editor-grid label {
+  display: grid;
+  gap: 3px;
+  align-content: start;
 }
 
 .card-editor-grid {
@@ -787,11 +895,22 @@ button {
   margin-bottom: 14px;
 }
 
+.teacher-settings-block label span,
+.teacher-detail-field span,
 .detail-card label span,
+.card-editor-form label span,
+.card-editor-grid label span,
 .detail-card dt {
   color: var(--ink-soft);
   font-size: 0.88rem;
-  margin-bottom: 4px;
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.teacher-subline-secondary {
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 0.88rem;
 }
 
 input[type="text"],
@@ -850,6 +969,162 @@ select {
   display: grid;
   gap: 8px;
   justify-items: end;
+}
+
+.teacher-award-meta {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.teacher-award-note {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  font-style: italic;
+  line-height: 1.45;
+}
+
+.teacher-week-legend {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+
+.teacher-week-pill {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.teacher-week-pill.is-active {
+  background: rgba(63, 138, 95, 0.12);
+  border-color: rgba(63, 138, 95, 0.28);
+  color: #216645;
+}
+
+.teacher-week-pill.is-pending {
+  background: rgba(214, 162, 29, 0.12);
+  border-color: rgba(214, 162, 29, 0.28);
+  color: #8d6510;
+}
+
+.teacher-week-pill.is-quiet {
+  background: rgba(200, 88, 49, 0.12);
+  border-color: rgba(200, 88, 49, 0.25);
+  color: #93452c;
+}
+
+.teacher-week-row {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  background: rgba(255, 255, 255, 0.8);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.teacher-week-row:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(73, 50, 30, 0.1);
+}
+
+.teacher-week-row.is-selected {
+  border-color: rgba(242, 111, 61, 0.4);
+  box-shadow: 0 16px 32px rgba(242, 111, 61, 0.16);
+  outline: 2px solid rgba(242, 111, 61, 0.18);
+  outline-offset: 2px;
+}
+
+.teacher-week-row-active {
+  background: rgba(63, 138, 95, 0.08);
+  border-color: rgba(63, 138, 95, 0.2);
+}
+
+.teacher-week-row-pending {
+  background: rgba(214, 162, 29, 0.08);
+  border-color: rgba(214, 162, 29, 0.22);
+}
+
+.teacher-week-row-quiet {
+  background: rgba(200, 88, 49, 0.08);
+  border-color: rgba(200, 88, 49, 0.18);
+}
+
+.teacher-week-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.teacher-week-head p,
+.teacher-week-foot {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.teacher-week-state {
+  white-space: nowrap;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  border: 1px solid rgba(24, 34, 47, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink-soft);
+}
+
+.teacher-week-state-active {
+  background: rgba(63, 138, 95, 0.12);
+  border-color: rgba(63, 138, 95, 0.28);
+  color: #216645;
+}
+
+.teacher-week-state-pending {
+  background: rgba(214, 162, 29, 0.12);
+  border-color: rgba(214, 162, 29, 0.28);
+  color: #8d6510;
+}
+
+.teacher-week-state-quiet {
+  background: rgba(200, 88, 49, 0.12);
+  border-color: rgba(200, 88, 49, 0.25);
+  color: #93452c;
+}
+
+.teacher-week-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.teacher-week-metrics span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(24, 34, 47, 0.06);
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.teacher-week-attention {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.teacher-week-attention h4 {
+  margin: 0;
 }
 
 .card-preview {
@@ -967,7 +1242,8 @@ select {
   .detail-metrics,
   .teacher-inline-actions,
   .workspace-card-grid,
-  .teacher-overview-embedded {
+  .teacher-overview-embedded,
+  .teacher-week-legend {
     grid-template-columns: 1fr;
   }
 

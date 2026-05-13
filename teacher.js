@@ -29,6 +29,7 @@ const cardRarityOptions = ["Basis", "Bronze", "Silber", "Gold", "Spezial"];
 const defaultPracticeCategories = ["Technik", "Stück", "Tonleiter", "Freies Spiel"];
 const teacherWorkspaces = [
   { id: "overview", label: "Übersicht", icon: "▣" },
+  { id: "week", label: "Woche", icon: "▤" },
   { id: "classes", label: "Klassen", icon: "◫" },
   { id: "students", label: "Lernende", icon: "◎" },
   { id: "cards", label: "Kärtchen", icon: "✦" },
@@ -44,6 +45,7 @@ const teacherState = {
   practiceCategories: [...defaultPracticeCategories],
   selectedClassId: "all",
   selectedStudentId: "",
+  selectedWeekStudentId: "",
   selectedCardId: "",
   selectedFeedbackRoundId: "",
   currentWorkspace: "overview",
@@ -78,6 +80,9 @@ const teacherState = {
   syncProgressMessage: "",
   syncProgressState: "idle",
   syncProgressSteps: [],
+  lastServerSyncAt: "",
+  syncState: "idle",
+  syncStateDetail: "",
 };
 
 const teacherRoot = document.querySelector("#teacher-root");
@@ -153,6 +158,7 @@ function defaultTeacherState() {
     practiceCategories: [...defaultPracticeCategories],
     selectedClassId: "all",
     selectedStudentId: "",
+    selectedWeekStudentId: "",
     selectedCardId: "",
     selectedFeedbackRoundId: "",
     currentWorkspace: "overview",
@@ -187,6 +193,9 @@ function defaultTeacherState() {
     syncProgressMessage: "",
     syncProgressState: "idle",
     syncProgressSteps: [],
+    lastServerSyncAt: "",
+    syncState: "idle",
+    syncStateDetail: "",
   };
 }
 
@@ -266,6 +275,7 @@ function queueTeacherAutoSync({ roster = false, cards = false } = {}) {
 
   if (!teacherState.syncTeacherKey) {
     teacherState.statusLine = "Änderungen lokal gespeichert. Server-Sync ausstehend.";
+    setTeacherSyncState("pending", "Der Lehrkräfte-Key fehlt noch. Die Änderungen bleiben lokal, bis ein Serverzugang hinterlegt ist.");
     persistTeacherState();
     renderTeacherApp();
     return;
@@ -273,6 +283,7 @@ function queueTeacherAutoSync({ roster = false, cards = false } = {}) {
 
   if (teacherAutoSyncInProgress) {
     teacherState.statusLine = "Änderungen gespeichert. Server-Sync läuft im Hintergrund weiter.";
+    setTeacherSyncState("running", "Weitere Änderungen werden an den laufenden Hintergrund-Sync angehängt.");
     persistTeacherState();
     renderTeacherApp();
     return;
@@ -288,6 +299,7 @@ async function runQueuedTeacherAutoSync() {
 
   teacherAutoSyncInProgress = true;
   teacherState.statusLine = "Änderungen gespeichert. Server-Sync läuft im Hintergrund.";
+  setTeacherSyncState("running", "Änderungen werden im Hintergrund zum Server gesendet.");
   persistTeacherState();
   renderTeacherApp();
 
@@ -314,9 +326,11 @@ async function runQueuedTeacherAutoSync() {
     if (!teacherState.toast) {
       teacherState.statusLine = "Änderungen gespeichert und mit dem Server synchronisiert.";
     }
+    setTeacherSyncState("ok", "Lokale Änderungen wurden automatisch zum Server gesendet und mit dem aktuellen Serverstand abgeglichen.", { markSynced: true });
   } catch (error) {
     teacherState.statusLine = "Änderungen gespeichert. Server-Sync ausstehend.";
     teacherState.toast = error?.message || "Automatischer Server-Sync fehlgeschlagen. Bitte Alles synchronisieren.";
+    setTeacherSyncState("error", teacherState.toast);
   } finally {
     teacherAutoSyncInProgress = false;
     persistTeacherState();
@@ -587,6 +601,150 @@ function getRuleTypeLabel(ruleType) {
   return "Zielbedingung";
 }
 
+function getRuleTypeGuidance(rule = {}) {
+  const normalizedType = rule.type || "entriesCountAtLeast";
+  const value = Number(rule.value) || 0;
+  const category = rule.category || "einer Kategorie";
+
+  const guidanceMap = {
+    none: {
+    title: "Direkt verliehen ohne automatische Prüfung",
+      text: "Dieses Kärtchen wird nicht durch Übedaten freigeschaltet. Es eignet sich für direkte Verleihungen mit persönlicher Notiz.",
+      example: "Beispiel: Nach einem Vorspiel oder einer besonders konzentrierten Stunde direkt verleihen.",
+    },
+    streakAtLeast: {
+      title: "Regelmäßigkeit in Folge",
+      text: "Gezählt werden Tage hintereinander, an denen überhaupt geübt wurde. Schon ein kurzer Eintrag reicht für den Tag.",
+      example: `Beispiel: Zielwert ${value || 5} bedeutet ${value || 5} Tage in Folge üben.`,
+    },
+    dayMinutesAtLeast: {
+      title: "Zeit an einem einzelnen Tag",
+      text: "Es zählt die gesamte Übezeit an einem Kalendertag, auch wenn sie auf mehrere Einträge verteilt ist.",
+      example: `Beispiel: Zielwert ${value || 15} bedeutet insgesamt ${value || 15} Minuten an einem Tag.`,
+    },
+    weekMinutesAtLeast: {
+      title: "Zeit innerhalb einer Woche",
+      text: "Es zählt die Summe aller Einträge innerhalb einer Woche. Mehrere kurze Einheiten werden zusammengezählt.",
+      example: `Beispiel: Zielwert ${value || 60} bedeutet insgesamt ${value || 60} Minuten in einer Woche.`,
+    },
+    monthMinutesAtLeast: {
+      title: "Zeit innerhalb eines Monats",
+      text: "Diese Regel belohnt längere Ausdauer über mehrere Wochen hinweg.",
+      example: `Beispiel: Zielwert ${value || 240} bedeutet insgesamt ${value || 240} Minuten in einem Monat.`,
+    },
+    notedEntriesAtLeast: {
+      title: "Mitdenken und reflektieren",
+      text: "Gezählt werden nur Einträge, in denen die lernende Person zusätzlich eine Notiz hinterlässt.",
+      example: `Beispiel: Zielwert ${value || 5} bedeutet ${value || 5} Einträge mit Notiz.`,
+    },
+    categoryUsed: {
+      title: "Bestimmten Schwerpunkt üben",
+      text: "Es werden nur Einträge gezählt, die genau dieser Übekategorie zugeordnet sind.",
+      example: `Beispiel: Zielwert ${value || 3} bedeutet ${value || 3} Einträge in ${category}.`,
+    },
+    categoriesCountAtLeast: {
+      title: "Abwechslung in den Schwerpunkten",
+      text: "Die Lernenden sollen verschiedene Kategorien nutzen statt immer nur denselben Schwerpunkt.",
+      example: `Beispiel: Zielwert ${value || 3} bedeutet ${value || 3} unterschiedliche Kategorien wurden genutzt.`,
+    },
+    morningEntryOnce: {
+      title: "Früh am Tag üben",
+      text: "Dieses Kärtchen wird freigeschaltet, sobald mindestens ein Eintrag vor 8 Uhr gespeichert wurde.",
+      example: "Beispiel: Ein einziger Morgen-Eintrag reicht aus.",
+    },
+    entriesCountAtLeast: {
+      title: "Einfach dranbleiben",
+      text: "Gezählt wird nur die Anzahl der gespeicherten Einträge, unabhängig von Dauer oder Kategorie.",
+      example: `Beispiel: Zielwert ${value || 10} bedeutet ${value || 10} gespeicherte Einträge.`,
+    },
+    weekEntriesAtLeast: {
+      title: "Mehrfach in einer Woche üben",
+      text: "Hier geht es nicht um Minuten, sondern darum, wie oft in einer Woche geübt und eingetragen wurde.",
+      example: `Beispiel: Zielwert ${value || 4} bedeutet ${value || 4} Einträge in derselben Woche.`,
+    },
+    daysPracticedAtLeast: {
+      title: "Viele einzelne Übetage sammeln",
+      text: "Gezählt werden unterschiedliche Kalendertage mit mindestens einem Eintrag.",
+      example: `Beispiel: Zielwert ${value || 10} bedeutet ${value || 10} verschiedene Übetage.`,
+    },
+  };
+
+  return guidanceMap[normalizedType] || {
+    title: "Zielbedingung festlegen",
+    text: "Die Zielbedingung beschreibt, was die Lernenden erreichen sollen.",
+    example: "Wähle eine passende Bedingung und einen klaren Zielwert.",
+  };
+}
+
+function formatTeacherDateTime(value) {
+  if (!value) {
+    return "Noch nicht synchronisiert";
+  }
+
+  return new Date(value).toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function setTeacherSyncState(syncState, detail = "", options = {}) {
+  teacherState.syncState = syncState;
+  teacherState.syncStateDetail = detail;
+  if (options.markSynced) {
+    teacherState.lastServerSyncAt = new Date().toISOString();
+  }
+}
+
+function describeTeacherSyncState() {
+  if (!teacherState.syncTeacherKey) {
+    return {
+      tone: "idle",
+      title: "Noch kein Serverzugang hinterlegt",
+    text: "Sobald Lehrkräfte-Key und Basis-URL gespeichert sind, können Lernende, Unterrichte und Kärtchen mit dem Server abgeglichen werden.",
+    };
+  }
+
+  if (teacherAutoSyncInProgress) {
+    return {
+      tone: "running",
+      title: "Server-Sync läuft gerade",
+      text: teacherState.syncStateDetail || "Lokale Änderungen werden im Hintergrund an den Server übertragen.",
+    };
+  }
+
+  if (teacherState.syncState === "error") {
+    return {
+      tone: "error",
+      title: "Server-Sync braucht Aufmerksamkeit",
+      text: teacherState.syncStateDetail || "Der letzte Abgleich hat nicht vollständig geklappt.",
+    };
+  }
+
+  if (teacherState.syncState === "pending") {
+    return {
+      tone: "pending",
+      title: "Lokale Änderungen warten auf den Server",
+    text: teacherState.syncStateDetail || "Bitte kurz synchronisieren, damit Verbindungen, Unterrichte und Kärtchen sicher auf dem Server landen.",
+    };
+  }
+
+  if (teacherState.lastServerSyncAt) {
+    return {
+      tone: "ok",
+      title: "Serverstand aktuell",
+      text: teacherState.syncStateDetail || `Zuletzt vollständig synchronisiert am ${formatTeacherDateTime(teacherState.lastServerSyncAt)}.`,
+    };
+  }
+
+  return {
+    tone: "idle",
+    title: "Bereit für den ersten Server-Sync",
+    text: "Nach dem ersten Abgleich stehen Verbindungscode, Kärtchen und Unterrichte auch serverseitig bereit.",
+  };
+}
+
 function normalizeTeacherCard(card) {
   const rule = normalizeCardRule(card?.rule);
   const assignment = {
@@ -650,6 +808,62 @@ function summarizeCardRule(card) {
 
   const base = `${description} · ${audience}`;
   return card.status === "inactive" ? `${base} · pausiert` : base;
+}
+
+function buildRuleMeaningText(rule = {}) {
+  const normalizedRule = normalizeCardRule(rule);
+  const value = Number(normalizedRule.value) || 0;
+  const category = normalizedRule.category || "einer Kategorie";
+
+  if (normalizedRule.type === "none") {
+    return "Bedeutet: Dieses Kärtchen wird nicht automatisch freigeschaltet, sondern nur direkt verliehen.";
+  }
+
+  if (normalizedRule.type === "streakAtLeast") {
+    return `Bedeutet: Die lernende Person muss ${value || 5} Tage in Folge üben.`;
+  }
+
+  if (normalizedRule.type === "dayMinutesAtLeast") {
+    return `Bedeutet: An einem einzelnen Tag müssen insgesamt ${value || 15} Minuten zusammenkommen.`;
+  }
+
+  if (normalizedRule.type === "weekMinutesAtLeast") {
+    return `Bedeutet: In einer Woche müssen insgesamt ${value || 60} Minuten zusammenkommen.`;
+  }
+
+  if (normalizedRule.type === "monthMinutesAtLeast") {
+    return `Bedeutet: In einem Monat müssen insgesamt ${value || 240} Minuten zusammenkommen.`;
+  }
+
+  if (normalizedRule.type === "notedEntriesAtLeast") {
+    return `Bedeutet: Es braucht ${value || 5} Einträge mit Notiz.`;
+  }
+
+  if (normalizedRule.type === "categoryUsed") {
+    return `Bedeutet: Es braucht ${value || 3} Einträge in ${category}.`;
+  }
+
+  if (normalizedRule.type === "categoriesCountAtLeast") {
+    return `Bedeutet: Es müssen mindestens ${value || 3} verschiedene Kategorien genutzt werden.`;
+  }
+
+  if (normalizedRule.type === "morningEntryOnce") {
+    return "Bedeutet: Ein einziger Eintrag vor 8 Uhr schaltet dieses Kärtchen frei.";
+  }
+
+  if (normalizedRule.type === "entriesCountAtLeast") {
+    return `Bedeutet: Es braucht ${value || 10} gespeicherte Einträge.`;
+  }
+
+  if (normalizedRule.type === "weekEntriesAtLeast") {
+    return `Bedeutet: Es braucht ${value || 4} Einträge innerhalb derselben Woche.`;
+  }
+
+  if (normalizedRule.type === "daysPracticedAtLeast") {
+    return `Bedeutet: Es braucht ${value || 10} verschiedene Übetage.`;
+  }
+
+  return "Bedeutet: Diese Zielbedingung wird automatisch mit den Übedaten der Lernenden-App geprüft.";
 }
 
 function pickStarterCategory(preferred, fallbackIndex = 0) {
@@ -746,6 +960,9 @@ function hydrateTeacherState() {
     teacherState.syncBaseUrl = normalizeSyncBaseUrl(parsed.syncBaseUrl || DEFAULT_SYNC_BASE_URL);
     teacherState.syncTeacherKey = parsed.syncTeacherKey || "";
     teacherState.syncTeacherLabel = parsed.syncTeacherLabel || "";
+    teacherState.lastServerSyncAt = parsed.lastServerSyncAt || "";
+    teacherState.syncState = ["idle", "pending", "running", "ok", "error"].includes(parsed.syncState) ? parsed.syncState : "idle";
+    teacherState.syncStateDetail = parsed.syncStateDetail || "";
     if (
       teacherState.statusLine !== "Bereit."
       && (!teacherState.statusLineUpdatedAt || (Date.now() - teacherState.statusLineUpdatedAt) >= STATUS_LINE_TTL_MS)
@@ -779,6 +996,9 @@ function persistTeacherState() {
       syncBaseUrl: teacherState.syncBaseUrl,
       syncTeacherKey: teacherState.syncTeacherKey,
       syncTeacherLabel: teacherState.syncTeacherLabel,
+      lastServerSyncAt: teacherState.lastServerSyncAt,
+      syncState: teacherState.syncState,
+      syncStateDetail: teacherState.syncStateDetail,
     }),
   );
 }
@@ -841,6 +1061,7 @@ function normalizeTeacherStudent(student) {
     latestReportStreak: Number(student.latestReportStreak) || 0,
     unlockedCards: Array.isArray(student.unlockedCards) ? student.unlockedCards : [],
     awardedCards: Array.isArray(student.awardedCards) ? student.awardedCards : [],
+    recentReports: Array.isArray(student.recentReports) ? student.recentReports : [],
     reportsReceived: Number(student.reportsReceived) || 0,
     lastImportedAt: student.lastImportedAt || "",
   };
@@ -848,11 +1069,26 @@ function normalizeTeacherStudent(student) {
 
 function getDisplayName(student) {
   const fullName = `${student.firstName} ${student.lastName}`.trim();
-  return fullName || student.importedDisplayName || "Unbekannt";
+  return student.importedDisplayName || fullName || "Unbekannt";
 }
 
 function getFormalName(student) {
   return `${student.firstName || ""} ${student.lastName || ""}`.trim();
+}
+
+function renderStudentNameBlock(student, meta = "", note = "") {
+  const displayName = getDisplayName(student);
+  const formalName = getFormalName(student);
+  const showFormalName = formalName && formalName !== displayName;
+
+  return `
+    <div class="teacher-student-name-block">
+      <strong>${escapeHtml(displayName)}</strong>
+      ${showFormalName ? `<small class="teacher-student-formal-name">${escapeHtml(formalName)}</small>` : ""}
+      ${meta ? `<p>${escapeHtml(meta)}</p>` : ""}
+      ${note ? `<small class="teacher-student-meta-note">${escapeHtml(note)}</small>` : ""}
+    </div>
+  `;
 }
 
 function getPersonId(student) {
@@ -903,7 +1139,7 @@ function getProfileDescriptor(student) {
     return `${profileLabel} · ${instrument}`;
   }
 
-  return profileLabel || instrument || "Profil";
+  return profileLabel || instrument || "Unterricht";
 }
 
 function getPersonProfileSummary(person) {
@@ -958,7 +1194,7 @@ function getAwardedCardsForCard(cardOrId) {
     .flatMap((student) => (student.awardedCards || []).map((award) => ({
       ...award,
       studentId: student.studentId,
-      profileLabel: student.profileLabel || student.importedInstrument || "Profil",
+    profileLabel: student.profileLabel || student.importedInstrument || "Unterricht",
       studentName: getDisplayName(student),
     })))
     .sort((a, b) => `${b.awardedAt || ""}`.localeCompare(`${a.awardedAt || ""}`));
@@ -997,7 +1233,7 @@ function createEmptyTeacherStudent() {
     importedDisplayName: "Neue lernende Person",
     importedInstrument: "",
     importedGoal: 15,
-    profileLabel: "Hauptprofil",
+  profileLabel: "Hauptunterricht",
     firstName: "",
     lastName: "",
     email: "",
@@ -1025,7 +1261,7 @@ function createSiblingTeacherProfile(student) {
     profileUuid: createId("profile"),
     importedInstrument: "",
     importedGoal: 15,
-    profileLabel: `Profil ${selectedPersonProfiles().length + 1}`,
+  profileLabel: `Unterricht ${selectedPersonProfiles().length + 1}`,
     entries: [],
     latestChecksum: "",
     latestReportLabel: "",
@@ -1229,7 +1465,7 @@ function exportTeacherRosterSyncPayload() {
       importedDisplayName: student.importedDisplayName || getDisplayName(student),
       importedInstrument: student.importedInstrument || "",
       importedGoal: Number(student.importedGoal) || 15,
-      profileLabel: student.profileLabel || student.importedInstrument || "Profil",
+    profileLabel: student.profileLabel || student.importedInstrument || "Unterricht",
       firstName: student.firstName || "",
       lastName: student.lastName || "",
       email: student.email || "",
@@ -1531,7 +1767,7 @@ function buildProfilePackageFilename(profilePackage) {
 }
 
 function buildStudentConnectionText(student) {
-  const profileLabel = student.profileLabel || student.importedInstrument || "Profil";
+  const profileLabel = student.profileLabel || student.importedInstrument || "Unterricht";
   const connectUrl = buildStudentConnectionUrl(student);
   return [
     `FleißTakt verbinden für ${getDisplayName(student)} · ${profileLabel}`,
@@ -1637,10 +1873,10 @@ async function openTeacherProfileQr(student) {
   const connectUrl = buildStudentConnectionUrl(student);
   teacherState.profileShareOpen = true;
   teacherState.profileShareEyebrow = "Kopplung";
-  teacherState.profileShareTitle = `${getDisplayName(student)} · ${student.profileLabel || student.importedInstrument || "Profil"}`;
-  teacherState.profileShareDescription = "Die Lernenden scannen diesen QR-Code nach der Installation der Lernenden-App oder oeffnen den Link direkt mit vorausgefuellten Kopplungsdaten.";
+  teacherState.profileShareTitle = `${getDisplayName(student)} · ${student.profileLabel || student.importedInstrument || "Unterricht"}`;
+  teacherState.profileShareDescription = "Die Lernenden scannen diesen QR-Code nach der Installation der Lernenden-App oder öffnen den Link direkt mit vorausgefüllten Kopplungsdaten.";
   teacherState.profileShareUrl = connectUrl;
-  teacherState.profileShareHelp = "Dieser QR-Code und der Link oeffnen FleißTakt mit Lernenden-ID, Verbindungscode und Server-Adresse bereits vorausgefuellt.";
+  teacherState.profileShareHelp = "Dieser QR-Code und der Link öffnen FleißTakt mit Lernenden-ID, Verbindungscode und Server-Adresse bereits vorausgefüllt.";
   teacherState.profileShareAllowPackageDownload = true;
   teacherState.profileShareFileName = "";
   teacherState.profileSharePayload = null;
@@ -1652,9 +1888,9 @@ function openLearnerAppShareDialog() {
   teacherState.profileShareOpen = true;
   teacherState.profileShareEyebrow = "Lernenden-App";
   teacherState.profileShareTitle = "Lernenden-App installieren";
-  teacherState.profileShareDescription = "Teile zuerst die Lernenden-App, damit sie auf dem Geraet installiert und einmal geoeffnet werden kann. Danach folgt die eigentliche Profil-Kopplung.";
+  teacherState.profileShareDescription = "Teile zuerst die Lernenden-App, damit sie auf dem Gerät installiert und einmal geöffnet werden kann. Danach folgt die eigentliche Profil-Kopplung.";
   teacherState.profileShareUrl = APP_SHARE_URL;
-  teacherState.profileShareHelp = "Dieser QR-Code und der Link fuehren zur Installationsseite der Lernenden-App.";
+  teacherState.profileShareHelp = "Dieser QR-Code und der Link führen zur Installationsseite der Lernenden-App.";
   teacherState.profileShareAllowPackageDownload = false;
   teacherState.profileShareFileName = "";
   teacherState.profileSharePayload = null;
@@ -1733,6 +1969,128 @@ function computeOverview() {
     totalMinutes: entries.reduce((sum, entry) => sum + (Number(entry.minutes) || 0), 0),
     activeCardCount: teacherState.cardLibrary.filter((card) => card.status === "active").length,
   };
+}
+
+function startOfTeacherWeek(input = new Date()) {
+  const date = new Date(input);
+  date.setHours(0, 0, 0, 0);
+  const weekday = date.getDay();
+  const offset = weekday === 0 ? -6 : 1 - weekday;
+  date.setDate(date.getDate() + offset);
+  return date;
+}
+
+function endOfTeacherWeek(input = new Date()) {
+  const date = startOfTeacherWeek(input);
+  date.setDate(date.getDate() + 6);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function parseTeacherDateValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isDateInTeacherWeek(value, weekStart, weekEnd) {
+  const date = parseTeacherDateValue(value);
+  return Boolean(date && date >= weekStart && date <= weekEnd);
+}
+
+function formatTeacherDate(value) {
+  const date = parseTeacherDateValue(value);
+  return date ? date.toLocaleDateString("de-DE") : "—";
+}
+
+function describeWeekActivity(student, weekStart, weekEnd) {
+  const entries = Array.isArray(student.entries) ? student.entries : [];
+  const weekEntries = entries.filter((entry) => isDateInTeacherWeek(entry.date || entry.savedAt, weekStart, weekEnd));
+  const weekMinutes = weekEntries.reduce((sum, entry) => sum + (Number(entry.minutes) || 0), 0);
+  const weekNotes = weekEntries.filter((entry) => `${entry.note || ""}`.trim()).length;
+  const awardsThisWeek = (student.awardedCards || []).filter((award) => isDateInTeacherWeek(award.awardedAt, weekStart, weekEnd));
+  const lastEntry = [...entries]
+    .map((entry) => ({ ...entry, __time: parseTeacherDateValue(entry.date || entry.savedAt) }))
+    .filter((entry) => entry.__time)
+    .sort((a, b) => b.__time - a.__time)[0] || null;
+
+  let tone = "quiet";
+  let label = "Noch ohne Eintrag";
+
+  if (weekEntries.length > 0) {
+    tone = "active";
+    label = "Diese Woche aktiv";
+  } else if (lastEntry) {
+    tone = "pending";
+    label = "Diese Woche noch offen";
+  }
+
+  return {
+    weekEntries,
+    weekMinutes,
+    weekNotes,
+    awardsThisWeek,
+    lastEntry,
+    tone,
+    label,
+  };
+}
+
+function buildWeekSnapshot(students = filteredStudents()) {
+  const weekStart = startOfTeacherWeek();
+  const weekEnd = endOfTeacherWeek();
+  const items = students
+    .map((student) => ({
+      student,
+      activity: describeWeekActivity(student, weekStart, weekEnd),
+    }))
+    .sort((left, right) => {
+      if (left.activity.weekEntries.length !== right.activity.weekEntries.length) {
+        return right.activity.weekEntries.length - left.activity.weekEntries.length;
+      }
+      if (left.activity.weekMinutes !== right.activity.weekMinutes) {
+        return right.activity.weekMinutes - left.activity.weekMinutes;
+      }
+      return getDisplayName(left.student).localeCompare(getDisplayName(right.student), "de");
+    });
+
+  return {
+    weekStart,
+    weekEnd,
+    items,
+    activeCount: items.filter((item) => item.activity.tone === "active").length,
+    pendingCount: items.filter((item) => item.activity.tone === "pending").length,
+    quietCount: items.filter((item) => item.activity.tone === "quiet").length,
+    totalEntries: items.reduce((sum, item) => sum + item.activity.weekEntries.length, 0),
+    totalMinutes: items.reduce((sum, item) => sum + item.activity.weekMinutes, 0),
+    totalNotes: items.reduce((sum, item) => sum + item.activity.weekNotes, 0),
+    totalAwards: items.reduce((sum, item) => sum + item.activity.awardsThisWeek.length, 0),
+    reportsThisWeek: items.filter((item) => isDateInTeacherWeek(item.student.lastImportedAt, weekStart, weekEnd)).length,
+  };
+}
+
+function buildRecentReports(limit = 8) {
+  return [...teacherState.students]
+    .filter((student) => student.reportsReceived > 0 && student.lastImportedAt)
+    .sort((a, b) => `${b.lastImportedAt || ""}`.localeCompare(`${a.lastImportedAt || ""}`))
+    .slice(0, limit);
+}
+
+function recentWeekReportsForStudent(student, weekStart, weekEnd) {
+  return (Array.isArray(student.recentReports) ? student.recentReports : [])
+    .filter((report) => {
+      const reportDate = report.exportedAt || report.receivedAt || "";
+      return report.range === "week" && isDateInTeacherWeek(reportDate, weekStart, weekEnd);
+    })
+    .sort((a, b) => `${b.exportedAt || b.receivedAt || ""}`.localeCompare(`${a.exportedAt || a.receivedAt || ""}`));
 }
 
 function renderWorkspaceRail() {
@@ -1854,10 +2212,11 @@ function renderStudentSidebar(students) {
                 .map(
                   (student) => `
                     <button class="student-row ${activeStudent?.studentId === student.studentId ? "is-active" : ""}" type="button" data-student-id="${student.studentId}">
-                      <strong>${escapeHtml(student.importedDisplayName || getDisplayName(student))}</strong>
-                      ${getFormalName(student) ? `<small>${escapeHtml(getFormalName(student))}</small>` : ""}
-                      <span>${escapeHtml(getProfileDescriptor(student))} · ${escapeHtml(getClassName(student.classId))}</span>
-                      <small>${escapeHtml(student.latestReportLabel || "Noch kein Bericht")}</small>
+                      ${renderStudentNameBlock(
+                        student,
+                        `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`,
+                        student.latestReportLabel || "Noch kein Bericht",
+                      )}
                     </button>
                   `,
                 )
@@ -1886,9 +2245,15 @@ function renderCardSidebar(cards) {
             ? cards
                 .map(
                   (card) => `
-                    <button class="card-library-row ${teacherState.selectedCardId === card.id ? "is-active" : ""}" type="button" data-card-id="${card.id}">
-                      <strong>${escapeHtml(card.title)}</strong>
-                      <span>${escapeHtml(summarizeCardRule(card))}</span>
+                    <button class="card-library-row card-library-preview ${teacherState.selectedCardId === card.id ? "is-active" : ""}" type="button" data-card-id="${card.id}">
+                      <article class="card-preview accent-${card.accent}">
+                        <div class="card-preview-top">
+                          <strong>${escapeHtml(card.title)}</strong>
+                          <span>${escapeHtml(card.symbol)}</span>
+                        </div>
+                        <p>${escapeHtml(card.description)}</p>
+                        <small>${escapeHtml(summarizeCardRule(card))} · ${escapeHtml(card.rarity)} · ${card.awardCount || 0} verliehen</small>
+                      </article>
                     </button>
                   `,
                 )
@@ -1976,7 +2341,7 @@ function renderFeedbackWorkspace() {
         !round
           ? `
             <section class="detail-card">
-              <p class="empty-copy">Sobald Rückmeldungen für deine Profile verfügbar sind, erscheinen sie hier.</p>
+              <p class="empty-copy">Sobald Rückmeldungen für deine Unterrichte verfügbar sind, erscheinen sie hier.</p>
             </section>
           `
           : !round.resultsVisible
@@ -2043,6 +2408,10 @@ function renderSidebarPane(students, cards) {
 
   if (teacherState.currentWorkspace === "overview") {
     return "";
+  }
+
+  if (teacherState.currentWorkspace === "week") {
+    return `<aside class="teacher-sidebar-pane">${renderClassSidebar()}</aside>`;
   }
 
   if (teacherState.currentWorkspace === "classes") {
@@ -2134,10 +2503,7 @@ function renderClassesWorkspace() {
                   .map(
                     (student) => `
                       <article class="roster-row">
-                        <div>
-                          <strong>${escapeHtml(getDisplayName(student))}</strong>
-                          <p>${escapeHtml(getProfileDescriptor(student))} · ${escapeHtml(getClassName(student.classId))}</p>
-                        </div>
+                        ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`)}
                         <span>${student.latestReportMinutes} Min</span>
                       </article>
                     `,
@@ -2159,6 +2525,7 @@ function renderOverviewWorkspace() {
   const latestCards = [...teacherState.cardLibrary]
     .sort((a, b) => `${b.updatedAt}`.localeCompare(`${a.updatedAt}`))
     .slice(0, 6);
+  const recentReports = buildRecentReports(8);
 
   return `
     <section class="workspace-main workspace-main-overview">
@@ -2223,10 +2590,7 @@ function renderOverviewWorkspace() {
                     .map(
                       (student) => `
                         <article class="roster-row">
-                          <div>
-                            <strong>${escapeHtml(getDisplayName(student))}</strong>
-                            <p>${escapeHtml(getClassName(student.classId))} · ${escapeHtml(student.latestReportLabel || "Noch kein Bericht")}</p>
-                          </div>
+                          ${renderStudentNameBlock(student, `${getClassName(student.classId)} · ${student.latestReportLabel || "Noch kein Bericht"}`)}
                           <span>${student.latestReportMinutes} Min</span>
                         </article>
                       `,
@@ -2258,9 +2622,188 @@ function renderOverviewWorkspace() {
                       `,
                     )
                     .join("")
-            : `<p class="empty-copy">Noch keine Lehrkräfte-Kärtchen angelegt.</p>`
+                : `<p class="empty-copy">Noch keine Lehrkräfte-Kärtchen angelegt.</p>`
             }
           </div>
+        </section>
+      </section>
+
+      <section class="detail-card">
+        <div class="sidebar-head">
+          <div>
+            <h3>Letzte Berichte</h3>
+            <p class="detail-note">Hier siehst du die zuletzt eingegangenen Berichte aus den Unterrichten.</p>
+          </div>
+          <span>${recentReports.length}</span>
+        </div>
+        <div class="roster-list">
+          ${
+            recentReports.length
+              ? recentReports
+                  .map(
+                    (student) => `
+                      <article class="roster-row">
+                        <div>
+                          <strong>${escapeHtml(getDisplayName(student))} · ${escapeHtml(getProfileDescriptor(student))}</strong>
+                          <p>${escapeHtml(getClassName(student.classId))} · ${escapeHtml(student.latestReportLabel || "Bericht")}</p>
+                        </div>
+                        <span>${student.latestReportMinutes} Min · ${escapeHtml(formatTeacherDateTime(student.lastImportedAt))}</span>
+                      </article>
+                    `,
+                  )
+                  .join("")
+              : `<p class="empty-copy">Noch keine Berichte sichtbar. Nach dem nächsten Server-Sync erscheinen sie hier.</p>`
+          }
+        </div>
+      </section>
+    </section>
+  `;
+}
+
+function renderWeekWorkspace() {
+  const currentClass = selectedClass();
+  const snapshot = buildWeekSnapshot(filteredStudents());
+  const attentionItems = snapshot.items.filter((item) => item.activity.tone !== "active");
+  const selectedWeekItem = snapshot.items.find((item) => item.student.studentId === teacherState.selectedWeekStudentId) || null;
+  const selectedWeekReports = selectedWeekItem
+    ? recentWeekReportsForStudent(selectedWeekItem.student, snapshot.weekStart, snapshot.weekEnd)
+    : [];
+
+  return `
+    <section class="workspace-main">
+      <div class="workspace-hero">
+        <div>
+          <p class="teacher-eyebrow">Wochen-Workspace</p>
+          <h2>${escapeHtml(currentClass?.name ? `Woche in ${currentClass.name}` : "Aktuelle Woche")}</h2>
+          <p class="teacher-subline">Arbeitsansicht für die laufende Woche mit Aktivität, letzter Rückmeldung und direktem Blick auf offene Unterrichte.</p>
+        </div>
+        <div class="detail-badges">
+          <span>${escapeHtml(formatTeacherDate(snapshot.weekStart))} – ${escapeHtml(formatTeacherDate(snapshot.weekEnd))}</span>
+          <span>${snapshot.items.length} Unterrichte</span>
+          <span>${snapshot.activeCount} aktiv</span>
+        </div>
+      </div>
+
+      <section class="workspace-card-grid">
+        <article class="detail-card metric-card">
+          <span>Aktiv in dieser Woche</span>
+          <strong>${snapshot.activeCount}</strong>
+        </article>
+        <article class="detail-card metric-card">
+          <span>Noch offen</span>
+          <strong>${snapshot.pendingCount + snapshot.quietCount}</strong>
+        </article>
+        <article class="detail-card metric-card">
+          <span>Minuten in dieser Woche</span>
+          <strong>${snapshot.totalMinutes}</strong>
+        </article>
+      </section>
+
+      <section class="detail-grid detail-grid-wide">
+        <section class="detail-card">
+          <div class="sidebar-head">
+            <div>
+              <h3>Wochenblick</h3>
+              <p class="detail-note">Grün heißt: diese Woche schon aktiv. Ocker heißt: früher aktiv, diese Woche noch offen. Rot heißt: noch gar kein Eintrag vorhanden.</p>
+            </div>
+            <span>${snapshot.items.length}</span>
+          </div>
+          <div class="teacher-week-legend">
+            <span class="teacher-week-pill is-active">Diese Woche aktiv</span>
+            <span class="teacher-week-pill is-pending">Noch offen</span>
+            <span class="teacher-week-pill is-quiet">Noch ohne Einträge</span>
+          </div>
+          <div class="teacher-week-list">
+            ${
+              snapshot.items.length
+                ? snapshot.items.map(({ student, activity }) => `
+                    <button
+                      class="teacher-week-row teacher-week-row-${activity.tone} ${teacherState.selectedWeekStudentId === student.studentId ? "is-selected" : ""}"
+                      type="button"
+                      data-week-student-id="${escapeHtml(student.studentId)}"
+                    >
+                      <div class="teacher-week-head">
+                        ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`)}
+                        <span class="teacher-week-state teacher-week-state-${activity.tone}">${escapeHtml(activity.label)}</span>
+                      </div>
+                      <div class="teacher-week-metrics">
+                        <span>${activity.weekMinutes} Min</span>
+                        <span>${activity.weekEntries.length} Einträge</span>
+                        <span>${activity.weekNotes} Notizen</span>
+                        <span>${activity.awardsThisWeek.length} direkte Kärtchen</span>
+                        <span>Serie ${student.latestReportStreak || 0}</span>
+                      </div>
+                      <p class="teacher-week-foot">Letzte Aktivität: ${escapeHtml(activity.lastEntry ? formatTeacherDate(activity.lastEntry.date || activity.lastEntry.savedAt) : "Noch keine")}</p>
+                    </button>
+                  `).join("")
+                : `<p class="empty-copy">Für diese Auswahl gibt es noch keine Unterrichte.</p>`
+            }
+          </div>
+        </section>
+
+        <section class="detail-card">
+          <div class="sidebar-head">
+            <div>
+              <h3>${selectedWeekItem ? `Berichte von ${escapeHtml(getDisplayName(selectedWeekItem.student))}` : "Diese Woche auf einen Blick"}</h3>
+              <p class="detail-note">${
+                selectedWeekItem
+                  ? "Noch einmal auf denselben Unterricht klicken, um zurück zur Gesamtübersicht zu wechseln."
+                  : "Kompakte Kennzahlen für Nachverfolgung und Unterrichtsgespräche."
+              }</p>
+            </div>
+          </div>
+          ${
+            selectedWeekItem
+              ? `
+                <dl class="detail-metrics">
+                  <div><dt>Berichte in dieser Woche</dt><dd>${selectedWeekReports.length}</dd></div>
+                  <div><dt>Minuten laut letztem Bericht</dt><dd>${selectedWeekItem.student.latestReportMinutes}</dd></div>
+                  <div><dt>Notizen laut letztem Bericht</dt><dd>${selectedWeekItem.student.latestReportNotedCount}</dd></div>
+                  <div><dt>Serie laut letztem Bericht</dt><dd>${selectedWeekItem.student.latestReportStreak}</dd></div>
+                </dl>
+                <div class="teacher-week-attention">
+                  <h4>Letzte 5 Wochenberichte</h4>
+                  <div class="teacher-entry-list">
+                    ${
+                      selectedWeekReports.length
+                        ? selectedWeekReports.slice(0, 5).map((report) => `
+                            <article class="teacher-entry-row">
+                              <div>
+                                <strong>${escapeHtml(report.label || "Wochenbericht")}</strong>
+                                <p>${report.minutes} Min · ${report.entriesCount || 0} Einträge · ${report.notedCount || 0} Notizen · Serie ${report.streak || 0}</p>
+                              </div>
+                              <span>${escapeHtml(report.exportedAt ? formatTeacherDateTime(report.exportedAt) : "—")}</span>
+                            </article>
+                          `).join("")
+                        : `<p class="empty-copy">Für diesen Unterricht ist in dieser Woche noch kein Wochenbericht eingegangen.</p>`
+                    }
+                  </div>
+                </div>
+              `
+              : `
+                <dl class="detail-metrics">
+                  <div><dt>Berichte in dieser Woche</dt><dd>${snapshot.reportsThisWeek}</dd></div>
+                  <div><dt>Einträge in dieser Woche</dt><dd>${snapshot.totalEntries}</dd></div>
+                  <div><dt>Notizen in dieser Woche</dt><dd>${snapshot.totalNotes}</dd></div>
+                  <div><dt>Direkt verliehene Kärtchen</dt><dd>${snapshot.totalAwards}</dd></div>
+                </dl>
+                <div class="teacher-week-attention">
+                  <h4>Gesprächsbedarf</h4>
+                  <div class="roster-list">
+                    ${
+                      attentionItems.length
+                        ? attentionItems.slice(0, 6).map(({ student, activity }) => `
+                            <article class="roster-row">
+                              ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${activity.label}`)}
+                              <span>${escapeHtml(activity.lastEntry ? formatTeacherDate(activity.lastEntry.date || activity.lastEntry.savedAt) : "Noch offen")}</span>
+                            </article>
+                          `).join("")
+                        : `<p class="empty-copy">Alle sichtbaren Unterrichte sind in dieser Woche schon aktiv.</p>`
+                    }
+                  </div>
+                </div>
+              `
+          }
         </section>
       </section>
     </section>
@@ -2310,7 +2853,8 @@ function renderStudentsWorkspace(students) {
         <div>
           <p class="teacher-eyebrow">Lernenden-Workspace</p>
           <h2>${escapeHtml(getDisplayName(activeStudent))}</h2>
-          <p class="teacher-subline">${personProfiles.length} Profile · Aktuell: ${escapeHtml(activeStudent.profileLabel || activeStudent.importedInstrument || "Profil")} · Ziel ${activeStudent.importedGoal || 0} Minuten</p>
+          ${getFormalName(activeStudent) && getFormalName(activeStudent) !== getDisplayName(activeStudent) ? `<p class="teacher-subline teacher-subline-secondary">${escapeHtml(getFormalName(activeStudent))}</p>` : ""}
+          <p class="teacher-subline">${personProfiles.length} Unterrichte · Aktuell: ${escapeHtml(activeStudent.profileLabel || activeStudent.importedInstrument || "Unterricht")} · Ziel ${activeStudent.importedGoal || 0} Minuten</p>
         </div>
         <div class="detail-badges">
           <span>${escapeHtml(activeStudent.latestReportLabel || "Noch kein Bericht")}</span>
@@ -2322,8 +2866,8 @@ function renderStudentsWorkspace(students) {
       <section class="detail-card detail-action-card">
         <div class="sidebar-head">
           <div>
-            <h3>Profile der lernenden Person</h3>
-            <p class="detail-note">Hier siehst du nur noch, welche Profile zu dieser lernenden Person gehören. Das aktive Profil wählst du bereits links in der Lernenden-Liste aus.</p>
+            <h3>Unterrichte dieser lernenden Person</h3>
+            <p class="detail-note">Hier siehst du, welche Unterrichte zu dieser lernenden Person gehören. Den aktiven Unterricht wählst du bereits links in der Lernenden-Liste aus.</p>
           </div>
           <span>${personProfiles.length}</span>
         </div>
@@ -2337,8 +2881,8 @@ function renderStudentsWorkspace(students) {
               `,
             )
             .join("")}
-          <button class="teacher-button" type="button" id="add-profile-button">Profil hinzufügen</button>
-          <button class="teacher-button" type="button" id="delete-profile-button">Profil löschen</button>
+          <button class="teacher-button" type="button" id="add-profile-button">Unterricht hinzufügen</button>
+          <button class="teacher-button" type="button" id="delete-profile-button">Unterricht löschen</button>
         </div>
       </section>
 
@@ -2346,13 +2890,13 @@ function renderStudentsWorkspace(students) {
         <div class="sidebar-head">
           <div>
             <h3>Kopplung für die Lernenden-App</h3>
-            <p class="detail-note">Der Verbindungscode wird vom WordPress-Plugin beim ersten erfolgreichen Server-Sync dieses Profils erzeugt. Danach kann die Lehrkraft die Lernenden-App teilen und fuer dieses Profil ID, Code oder den Kopplungs-QR bereitstellen.</p>
+            <p class="detail-note">Kurzablauf: App teilen, Unterricht synchronisieren, QR-Code oder ID und Code weitergeben.</p>
           </div>
         </div>
         <ol class="teacher-coupling-steps">
-          <li>Teile zuerst die Lernenden-App oder zeige den Installations-QR, damit die App auf dem Geraet installiert wird.</li>
-          <li>Lege danach die lernende Person an, speichere das Profil und fuehre <code>Alles synchronisieren</code> aus.</li>
-          <li>Sobald Lernenden-ID und Verbindungscode sichtbar sind, teile beides oder zeige direkt den Kopplungs-QR fuer dieses Profil.</li>
+          <li>Lernenden-App teilen oder App-QR zeigen.</li>
+          <li>Unterricht speichern und mit dem Server synchronisieren.</li>
+          <li>Kopplungs-QR zeigen oder Lernenden-ID und Verbindungscode teilen.</li>
         </ol>
         <div class="teacher-inline-actions teacher-inline-actions-wrap">
           <button class="teacher-button teacher-button-primary" type="button" id="share-learner-app">Lernenden-App teilen</button>
@@ -2374,14 +2918,14 @@ function renderStudentsWorkspace(students) {
           <button class="teacher-button" type="button" id="copy-student-id" ${(activeStudent.studentId && activeStudent.connectCode) ? "" : "disabled"}>ID kopieren</button>
           <button class="teacher-button" type="button" id="copy-connect-code" ${(activeStudent.studentId && activeStudent.connectCode) ? "" : "disabled"}>Code kopieren</button>
         </div>
-        <p class="detail-note">${activeStudent.connectCode ? "Lernenden-ID und 4-stelliger Verbindungscode liegen jetzt vor. Du kannst sie direkt teilen, kopieren oder als Kopplungs-QR anzeigen." : "Nach dem ersten erfolgreichen Server-Sync stehen hier automatisch Lernenden-ID und Verbindungscode bereit. Danach kannst du ID + Code teilen oder den Kopplungs-QR zeigen."}</p>
+        <p class="detail-note">${activeStudent.connectCode ? "ID und 4-stelliger Code sind bereit. Jetzt einfach QR-Code zeigen oder beides teilen." : "Nach dem ersten erfolgreichen Server-Sync erscheinen hier automatisch Lernenden-ID und Verbindungscode."}</p>
       </section>
 
       <section class="detail-card detail-action-card">
         <div class="sidebar-head">
           <div>
-            <h3>Fallback: Profilpaket</h3>
-            <p class="detail-note">Nur fuer Ausnahmefaelle: Wenn Kopplungs-QR und Code-Eingabe nicht funktionieren, kann das Profil weiterhin als Paket geladen oder geteilt werden.</p>
+            <h3>Ausnahmeweg: Profilpaket</h3>
+            <p class="detail-note">Nur für Ausnahmefälle, wenn QR-Code und Code-Eingabe nicht funktionieren.</p>
           </div>
         </div>
         <div class="teacher-inline-actions teacher-inline-actions-wrap">
@@ -2392,7 +2936,7 @@ function renderStudentsWorkspace(students) {
 
       <section class="detail-grid">
         <form class="detail-card" id="student-form">
-          <h3>Stammdaten und aktuelles Profil</h3>
+          <h3>Stammdaten und aktueller Unterricht</h3>
           <input type="hidden" id="student-id" value="${escapeHtml(activeStudent.studentId)}" />
           <label>
             <span>Anzeigename</span>
@@ -2422,7 +2966,7 @@ function renderStudentsWorkspace(students) {
             </select>
           </label>
           <label>
-            <span>Profilbezeichnung</span>
+              <span>Unterrichtsbezeichnung</span>
             <input id="student-profile-label" type="text" value="${escapeHtml(activeStudent.profileLabel || "")}" />
           </label>
           <label>
@@ -2474,14 +3018,15 @@ function renderStudentsWorkspace(students) {
                       <article class="teacher-entry-row teacher-award-row">
                         <div>
                           <strong>${escapeHtml(award.title || "Kärtchen")}</strong>
-                          <p>${escapeHtml(award.note || "Ohne Notiz")}</p>
+                          <p class="teacher-award-meta">${escapeHtml(award.awardedAt ? `Verliehen am ${formatTeacherDateTime(award.awardedAt)}` : "Direkt verliehen")}</p>
+                          <p class="teacher-award-note">${escapeHtml(award.note || "Ohne Notiz")}</p>
                         </div>
-                        <span>${award.awardedAt ? escapeHtml(new Date(award.awardedAt).toLocaleDateString("de-DE")) : "Belohnung"}</span>
+                        <span>${award.awardedAt ? escapeHtml(new Date(award.awardedAt).toLocaleDateString("de-DE")) : "Direkt verliehen"}</span>
                       </article>
                     `,
                   )
                   .join("")
-              : `<p class="empty-copy">Dieses Profil hat noch keine direkt verliehenen Kärtchen.</p>`
+              : `<p class="empty-copy">Dieser Unterricht hat noch keine direkt verliehenen Kärtchen.</p>`
           }
         </div>
       </section>
@@ -2503,29 +3048,25 @@ function renderStudentsWorkspace(students) {
       </section>
 
       <section class="detail-card">
-        <h3>Letzte Einträge</h3>
+        <h3>Letzte Berichte</h3>
         <div class="teacher-entry-list">
           ${
-            activeStudent.entries.length
-              ? activeStudent.entries
-                  .slice(0, 12)
+            activeStudent.recentReports.length
+              ? activeStudent.recentReports
+                  .slice(0, 5)
                   .map(
-                    (entry) => `
+                    (report) => `
                       <article class="teacher-entry-row">
                         <div>
-                          <strong>${escapeHtml(new Date(`${entry.date}T12:00:00`).toLocaleDateString("de-DE", {
-                            weekday: "short",
-                            day: "2-digit",
-                            month: "2-digit",
-                          }))}</strong>
-                          <p>${escapeHtml(entry.instrument)} · ${escapeHtml(entry.category)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</p>
+                          <strong>${escapeHtml(report.label || "Bericht")}</strong>
+                          <p>${report.minutes} Min · ${report.entriesCount || 0} Einträge · ${report.notedCount || 0} Notizen · Serie ${report.streak || 0}</p>
                         </div>
-                        <span>${entry.minutes} Min</span>
+                        <span>${escapeHtml(report.exportedAt ? formatTeacherDateTime(report.exportedAt) : "—")}</span>
                       </article>
                     `,
                   )
                   .join("")
-              : `<p class="empty-copy">Noch keine Einträge vorhanden.</p>`
+              : `<p class="empty-copy">Noch keine Berichte vorhanden.</p>`
           }
         </div>
       </section>
@@ -2538,7 +3079,10 @@ function renderCardsWorkspace(cards) {
   const cardDraft = activeCard || emptyCardDraft();
   const selectedLearner = selectedStudent();
   const awardedCards = activeCard ? getAwardedCardsForCard(activeCard) : [];
+  const latestAward = awardedCards[0] || null;
   const practiceCategories = getEffectivePracticeCategories();
+  const ruleGuidance = getRuleTypeGuidance(cardDraft.rule);
+  const ruleMeaningText = buildRuleMeaningText(cardDraft.rule);
   const categoryRuleOptions = practiceCategories
     .map((item) => `<option value="${escapeHtml(item)}" ${cardDraft.rule.category === item ? "selected" : ""}>${escapeHtml(item)}</option>`)
     .join("");
@@ -2561,7 +3105,7 @@ function renderCardsWorkspace(cards) {
         <div>
           <p class="teacher-eyebrow">Kärtchen-Workspace</p>
           <h2>Lehrkräfte-Kärtchen gestalten</h2>
-          <p class="teacher-subline">Eigene Ziele anlegen, pausieren und bei Bedarf direkt als Belohnung an Lernende verleihen.</p>
+          <p class="teacher-subline">Eigene Ziele anlegen, pausieren und bei Bedarf direkt an Lernende verleihen.</p>
         </div>
         <div class="detail-badges">
           <span>${cards.filter((card) => card.status === "active").length} aktiv</span>
@@ -2578,6 +3122,7 @@ function renderCardsWorkspace(cards) {
             <label>
               <span>Kategorien</span>
               <textarea id="practice-categories-input" rows="5" placeholder="Eine Kategorie pro Zeile">${escapeHtml(practiceCategories.join("\n"))}</textarea>
+              <small>Jede Zeile ergibt eine eigene Kategorie.</small>
             </label>
             <div class="teacher-inline-actions">
               <button class="teacher-button teacher-button-primary" type="submit">Kategorien speichern</button>
@@ -2624,6 +3169,12 @@ function renderCardsWorkspace(cards) {
             </label>
             <div></div>
           </div>
+          <article class="teacher-rule-helper">
+            <strong>${escapeHtml(ruleGuidance.title)}</strong>
+            <p>${escapeHtml(ruleGuidance.text)}</p>
+            <small>${escapeHtml(ruleGuidance.example)}</small>
+          </article>
+          <p class="detail-note"><strong>${escapeHtml(ruleMeaningText)}</strong></p>
           <div class="card-editor-grid">
             <label>
               <span>Farbwelt</span>
@@ -2671,7 +3222,7 @@ function renderCardsWorkspace(cards) {
                   cardDraft.assignment.type === "class"
                     ? `<option value="">Klasse wählen</option>${classAssignmentOptions}`
                     : cardDraft.assignment.type === "student"
-                      ? `<option value="">Person wählen</option>${studentAssignmentOptions}`
+                      ? `<option value="">Unterricht wählen</option>${studentAssignmentOptions}`
                       : `<option value="">Nicht nötig</option>`
                 }
               </select>
@@ -2682,32 +3233,8 @@ function renderCardsWorkspace(cards) {
             <button class="teacher-button" type="button" id="reset-card-form">Neu beginnen</button>
             ${cardDraft.id ? `<button class="teacher-button" type="button" id="delete-card-button">Karte löschen</button>` : ""}
           </div>
-          <p class="detail-note">Zielbedingung beschreibt <strong>was</strong> geprüft wird, Zielwert beschreibt <strong>ab welcher Zahl</strong> das Kärtchen freigeschaltet wird. Für reine Belohnungen eignet sich die Zielbedingung <strong>Keine</strong>.</p>
+          <p class="detail-note">Zielbedingung beschreibt <strong>was</strong> geprüft wird, Zielwert beschreibt <strong>ab welcher Zahl</strong> das Kärtchen freigeschaltet wird. Für Kärtchen ohne automatische Prüfung eignet sich die Zielbedingung <strong>Keine</strong>.</p>
         </form>
-
-        <section class="detail-card">
-          <h3>Bibliothek auf einen Blick</h3>
-          <div class="card-preview-grid">
-            ${
-              cards.length
-                ? cards
-                    .map(
-                      (card) => `
-                        <article class="card-preview accent-${card.accent}">
-                          <div class="card-preview-top">
-                            <strong>${escapeHtml(card.title)}</strong>
-                            <span>${escapeHtml(card.symbol)}</span>
-                          </div>
-                          <p>${escapeHtml(card.description)}</p>
-                          <small>${escapeHtml(summarizeCardRule(card))} · ${escapeHtml(card.rarity)} · ${card.awardCount || 0} verliehen</small>
-                        </article>
-                      `,
-                    )
-                    .join("")
-            : `<p class="empty-copy">Lege das erste Kärtchen an, um diese Bibliothek zu füllen.</p>`
-            }
-          </div>
-        </section>
 
         <section class="detail-card">
           <h3>Kärtchen direkt verleihen</h3>
@@ -2721,9 +3248,9 @@ function renderCardsWorkspace(cards) {
                     <input type="text" readonly value="${escapeHtml(activeCard.title)}" />
                   </label>
                   <label>
-                    <span>An dieses Profil verleihen</span>
+                    <span>An diesen Unterricht verleihen</span>
                     <select id="manual-award-student-id">
-                      <option value="">Profil wählen</option>
+                      <option value="">Unterricht wählen</option>
                       ${manualAwardOptions}
                     </select>
                   </label>
@@ -2743,6 +3270,22 @@ function renderCardsWorkspace(cards) {
 
         <section class="detail-card">
           <h3>Bereits direkt verliehen</h3>
+          ${
+            activeCard
+              ? `
+                <div class="teacher-award-summary">
+                  <article class="teacher-award-summary-card">
+                    <span>Direkt verliehen</span>
+                    <strong>${awardedCards.length}</strong>
+                  </article>
+                  <article class="teacher-award-summary-card">
+                    <span>Zuletzt</span>
+                    <strong>${escapeHtml(latestAward ? formatTeacherDateTime(latestAward.awardedAt) : "Noch offen")}</strong>
+                  </article>
+                </div>
+              `
+              : ""
+          }
           <div class="teacher-entry-list">
             ${
               activeCard
@@ -2754,10 +3297,11 @@ function renderCardsWorkspace(cards) {
                             <article class="teacher-entry-row teacher-award-row">
                               <div>
                                 <strong>${escapeHtml(award.studentName)} · ${escapeHtml(award.profileLabel)}</strong>
-                                <p>${escapeHtml(award.note || "Ohne Notiz")}</p>
+                                <p class="teacher-award-meta">${escapeHtml(award.awardedAt ? `Verliehen am ${formatTeacherDateTime(award.awardedAt)}` : "Direkt verliehen")}</p>
+                                <p class="teacher-award-note">${escapeHtml(award.note || "Ohne Notiz")}</p>
                               </div>
                               <div class="teacher-award-actions">
-                                <span>${award.awardedAt ? escapeHtml(new Date(award.awardedAt).toLocaleDateString("de-DE")) : "Belohnung"}</span>
+                                <span>${award.awardedAt ? escapeHtml(new Date(award.awardedAt).toLocaleDateString("de-DE")) : "Direkt verliehen"}</span>
                                 <button class="teacher-button" type="button" data-revoke-award="${award.awardId}" data-revoke-card="${escapeHtml(activeCard.id)}">Zurücknehmen</button>
                               </div>
                             </article>
@@ -2780,6 +3324,10 @@ function renderMainWorkspace(students, cards) {
     return renderOverviewWorkspace();
   }
 
+  if (teacherState.currentWorkspace === "week") {
+    return renderWeekWorkspace();
+  }
+
   if (teacherState.currentWorkspace === "classes") {
     return renderClassesWorkspace();
   }
@@ -2799,6 +3347,7 @@ function renderTeacherApp() {
   const students = filteredStudents().sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"));
   const cards = [...teacherState.cardLibrary].sort((a, b) => a.title.localeCompare(b.title, "de"));
   const hasSidebarPane = !teacherState.sidebarCollapsed && teacherState.currentWorkspace !== "overview";
+  const syncSummary = describeTeacherSyncState();
 
   if (teacherState.statusLine !== lastRenderedTeacherStatusLine) {
     teacherState.statusLineUpdatedAt = teacherState.statusLine === "Bereit." ? 0 : Date.now();
@@ -2815,7 +3364,7 @@ function renderTeacherApp() {
         <div>
           <p class="teacher-eyebrow">Lehrkräfte-Version</p>
           <h1>FleißTakt Lehrkräfte Studio</h1>
-          <p class="teacher-subline">Workspaces für Klassen, Lernende und Kärtchen</p>
+          <p class="teacher-subline">Workspaces für Woche, Klassen, Lernende und Kärtchen</p>
         </div>
         <div class="teacher-actions">
           <div class="teacher-status-chip" role="status">${escapeHtml(teacherState.statusLine)}</div>
@@ -2849,6 +3398,11 @@ function renderTeacherApp() {
           <section class="teacher-settings-block">
             <h3>Sync</h3>
             <p class="teacher-settings-copy">Lehrkräfte-Key aus dem WordPress-Plugin eintragen und Berichte, Klassen und Kärtchen per Knopfdruck laden.</p>
+            <article class="teacher-sync-summary teacher-sync-summary-${escapeHtml(syncSummary.tone)}">
+              <strong>${escapeHtml(syncSummary.title)}</strong>
+              <p>${escapeHtml(syncSummary.text)}</p>
+              <small>${teacherState.syncTeacherLabel ? `Verbunden als ${escapeHtml(teacherState.syncTeacherLabel)}.` : "Noch keine Serveridentität geladen."}${teacherState.lastServerSyncAt ? ` Letzter vollständiger Sync: ${escapeHtml(formatTeacherDateTime(teacherState.lastServerSyncAt))}.` : ""}</small>
+            </article>
             <label>
               <span>Sync-Basis-URL</span>
               <input id="teacher-sync-base-url" type="text" value="${escapeHtml(teacherState.syncBaseUrl)}" />
@@ -2857,7 +3411,6 @@ function renderTeacherApp() {
               <span>Lehrkräfte-Key</span>
               <input id="teacher-sync-key" type="text" value="${escapeHtml(teacherState.syncTeacherKey)}" />
             </label>
-            <p class="teacher-settings-copy">${escapeHtml(teacherState.syncTeacherLabel ? `Verbunden als ${teacherState.syncTeacherLabel}` : "Noch keine Serveridentität geladen.")}</p>
             <div class="teacher-update-actions">
               <button class="teacher-button" type="button" id="save-teacher-sync-settings">Sync speichern</button>
               <button class="teacher-button" type="button" id="settings-sync-teacher-all">Alles synchronisieren</button>
@@ -2901,7 +3454,7 @@ function renderTeacherApp() {
               <div>
                 <p class="teacher-eyebrow">${escapeHtml(teacherState.profileShareEyebrow || "Kopplung")}</p>
                 <h2>${escapeHtml(teacherState.profileShareTitle || "Freigabe")}</h2>
-                <p class="teacher-settings-copy">${escapeHtml(teacherState.profileShareDescription || "Der QR-Code und der Link fuehren direkt zu dieser Freigabe.")}</p>
+                <p class="teacher-settings-copy">${escapeHtml(teacherState.profileShareDescription || "Der QR-Code und der Link führen direkt zu dieser Freigabe.")}</p>
               </div>
               <button class="teacher-button" type="button" id="close-profile-share-dialog">Schließen</button>
             </div>
@@ -2918,7 +3471,7 @@ function renderTeacherApp() {
                 <span>Freigabelink</span>
                 <input id="profile-share-url" type="text" readonly value="${escapeHtml(teacherState.profileShareUrl)}" />
               </label>
-              <p class="teacher-settings-copy">${escapeHtml(teacherState.profileShareHelp || "Dieser QR-Code und der Link oeffnen FleißTakt mit den benoetigten Daten.")}</p>
+              <p class="teacher-settings-copy">${escapeHtml(teacherState.profileShareHelp || "Dieser QR-Code und der Link öffnen FleißTakt mit den benötigten Daten.")}</p>
             </div>
             <div class="teacher-update-actions teacher-share-actions">
               <button class="teacher-button teacher-button-primary" type="button" id="copy-profile-share-url">Link kopieren</button>
@@ -3125,22 +3678,28 @@ function bindTeacherEvents() {
   });
 
   const runTeacherSyncImport = async () => {
+    setTeacherSyncState("running", "Aktueller Serverstand wird geladen...");
     try {
       const snapshot = await fetchTeacherSyncSnapshot();
       importTeacherSyncSnapshot(snapshot);
       teacherState.toast = "Serverdaten übernommen.";
+      setTeacherSyncState("ok", "Der aktuelle Serverstand wurde geladen, ohne lokale Änderungen hochzuladen.", { markSynced: true });
     } catch (error) {
       if (error?.message === "fehlender-teacher-key") {
         teacherState.statusLine = "Lehrkräfte-Key fehlt.";
         teacherState.toast = "Bitte zuerst Lehrkräfte-Key hinterlegen.";
+        setTeacherSyncState("pending", "Für den Serverabgleich fehlt noch ein Lehrkräfte-Key.");
       } else if (error?.message && !error.message.includes("teacher-sync-fehlgeschlagen")) {
         teacherState.statusLine = "Server-Sync fehlgeschlagen.";
         teacherState.toast = error.message;
+        setTeacherSyncState("error", error.message);
       } else {
         teacherState.statusLine = "Server-Sync fehlgeschlagen.";
         teacherState.toast = "Serverdaten konnten nicht geladen werden.";
+        setTeacherSyncState("error", "Serverdaten konnten nicht geladen werden.");
       }
     }
+    persistTeacherState();
     renderTeacherApp();
   };
 
@@ -3150,16 +3709,20 @@ function bindTeacherEvents() {
       teacherState.statusLine = "Kärtchen mit dem Server synchronisiert.";
       teacherState.lastImportSummary = `${Number(result?.count) || 0} Kärtchen auf dem Server gespeichert.`;
       teacherState.toast = `${Number(result?.count) || 0} Kärtchen zum Server gespeichert.`;
+      setTeacherSyncState("ok", "Die Kärtchenbibliothek wurde erfolgreich auf den Server übertragen.", { markSynced: true });
     } catch (error) {
       if (error?.message === "fehlender-teacher-key") {
         teacherState.statusLine = "Lehrkräfte-Key fehlt.";
         teacherState.toast = "Bitte zuerst Lehrkräfte-Key hinterlegen.";
+        setTeacherSyncState("pending", "Die Kärtchenbibliothek wartet auf einen hinterlegten Lehrkräfte-Key.");
       } else if (error?.message && !error.message.includes("teacher-cards-fehlgeschlagen")) {
         teacherState.statusLine = "Kärtchen-Sync fehlgeschlagen.";
         teacherState.toast = error.message;
+        setTeacherSyncState("error", error.message);
       } else {
         teacherState.statusLine = "Kärtchen-Sync fehlgeschlagen.";
         teacherState.toast = "Kärtchen konnten nicht auf den Server gespeichert werden.";
+        setTeacherSyncState("error", "Kärtchen konnten nicht auf den Server gespeichert werden.");
       }
     }
     persistTeacherState();
@@ -3170,18 +3733,22 @@ function bindTeacherEvents() {
     try {
       const result = await pushTeacherRosterToServer();
       teacherState.statusLine = "Stammdaten mit dem Server synchronisiert.";
-      teacherState.lastImportSummary = `${Number(result?.studentCount) || 0} Profile und ${Number(result?.classCount) || 0} Klassen auf dem Server gespeichert.`;
-      teacherState.toast = `${Number(result?.studentCount) || 0} Lernenden-Profile zum Server gespeichert.`;
+      teacherState.lastImportSummary = `${Number(result?.studentCount) || 0} Unterrichte und ${Number(result?.classCount) || 0} Klassen auf dem Server gespeichert.`;
+      teacherState.toast = `${Number(result?.studentCount) || 0} Unterrichte zum Server gespeichert.`;
+      setTeacherSyncState("ok", "Lernende, Unterrichte und Klassen wurden erfolgreich auf den Server übertragen.", { markSynced: true });
     } catch (error) {
       if (error?.message === "fehlender-teacher-key") {
         teacherState.statusLine = "Lehrkräfte-Key fehlt.";
         teacherState.toast = "Bitte zuerst Lehrkräfte-Key hinterlegen.";
+        setTeacherSyncState("pending", "Stammdaten warten auf einen hinterlegten Lehrkräfte-Key.");
       } else if (error?.message && !error.message.includes("teacher-roster-fehlgeschlagen")) {
         teacherState.statusLine = "Stammdaten-Sync fehlgeschlagen.";
         teacherState.toast = error.message;
+        setTeacherSyncState("error", error.message);
       } else {
         teacherState.statusLine = "Stammdaten-Sync fehlgeschlagen.";
         teacherState.toast = "Klassen und Lernenden-Daten konnten nicht auf den Server gespeichert werden.";
+        setTeacherSyncState("error", "Klassen und Lernenden-Daten konnten nicht auf den Server gespeichert werden.");
       }
     }
     persistTeacherState();
@@ -3194,6 +3761,7 @@ function bindTeacherEvents() {
       { id: "cards", label: "Kärtchenbibliothek zum Server senden" },
       { id: "snapshot", label: "Aktuellen Serverstand zurückladen" },
     ]);
+    setTeacherSyncState("running", "Stammdaten, Kärtchen und Serverstand werden gerade abgeglichen.");
 
     try {
       updateSyncProgress("roster", "running", "Stammdaten werden zum Server gesendet...");
@@ -3212,10 +3780,12 @@ function bindTeacherEvents() {
         finishSyncProgress("success", "Der Serverstand wurde geladen. Die lokale Kärtchenbibliothek bleibt vorsorglich erhalten, weil der Server noch keine Karten zurückgemeldet hat.");
         teacherState.statusLine = "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten.";
         teacherState.toast = "Der Server hat direkt nach dem Kärtchen-Sync noch keine Karten zurückgemeldet. Die lokale Bibliothek bleibt deshalb vorerst erhalten.";
+        setTeacherSyncState("ok", "Stammdaten und Kärtchen wurden übertragen. Die lokale Bibliothek bleibt vorsorglich erhalten, bis der Server die Karten vollständig zurückmeldet.", { markSynced: true });
       } else {
         finishSyncProgress("success", "Stammdaten, Kärtchen und der aktuelle Serverstand sind jetzt synchron.");
         teacherState.statusLine = "Alle Bereiche mit dem Server synchronisiert.";
         teacherState.toast = "Stammdaten, Kärtchen und Serverstand sind jetzt synchron.";
+        setTeacherSyncState("ok", "Alle lokalen Änderungen wurden gesendet und mit dem aktuellen Serverstand abgeglichen.", { markSynced: true });
       }
     } catch (error) {
       const runningStep = teacherState.syncProgressSteps.find((step) => step.state === "running");
@@ -3226,14 +3796,17 @@ function bindTeacherEvents() {
         finishSyncProgress("error", "Lehrkräfte-Key fehlt. Bitte hinterlege zuerst den Zugang in den Einstellungen.");
         teacherState.statusLine = "Lehrkräfte-Key fehlt.";
         teacherState.toast = "Bitte zuerst Lehrkräfte-Key hinterlegen.";
+        setTeacherSyncState("pending", "Ohne Lehrkräfte-Key kann gerade nichts mit dem Server abgeglichen werden.");
       } else if (error?.message) {
         finishSyncProgress("error", error.message);
         teacherState.statusLine = "Gesamtsync fehlgeschlagen.";
         teacherState.toast = error.message;
+        setTeacherSyncState("error", error.message);
       } else {
         finishSyncProgress("error", "Nicht alle Bereiche konnten synchronisiert werden.");
         teacherState.statusLine = "Gesamtsync fehlgeschlagen.";
         teacherState.toast = "Nicht alle Bereiche konnten synchronisiert werden.";
+        setTeacherSyncState("error", "Nicht alle Bereiche konnten synchronisiert werden.");
       }
     }
     persistTeacherState();
@@ -3244,6 +3817,12 @@ function bindTeacherEvents() {
     teacherState.syncBaseUrl = normalizeSyncBaseUrl(document.querySelector("#teacher-sync-base-url")?.value || DEFAULT_SYNC_BASE_URL);
     teacherState.syncTeacherKey = document.querySelector("#teacher-sync-key")?.value?.trim() || "";
     teacherState.statusLine = teacherState.syncTeacherKey ? "Sync-Zugang gespeichert." : "Sync-Zugang zurückgesetzt.";
+    setTeacherSyncState(
+      teacherState.syncTeacherKey ? teacherState.syncState || "idle" : "pending",
+      teacherState.syncTeacherKey
+        ? (teacherState.lastServerSyncAt ? `Serverzugang gespeichert. Letzter vollständiger Sync: ${formatTeacherDateTime(teacherState.lastServerSyncAt)}.` : "Serverzugang gespeichert. Der erste vollständige Sync kann jetzt gestartet werden.")
+        : "Ohne Lehrkräfte-Key bleiben Änderungen lokal auf diesem Gerät.",
+    );
     persistTeacherState();
     teacherState.toast = "Sync-Einstellungen gespeichert.";
     renderTeacherApp();
@@ -3531,7 +4110,7 @@ function bindTeacherEvents() {
     const studentId = document.querySelector("#manual-award-student-id")?.value?.trim() || "";
     const note = (document.querySelector("#manual-award-note")?.value?.trim() || "").slice(0, CARD_AWARD_NOTE_MAX_LENGTH);
     if (!cardId || !studentId) {
-      teacherState.toast = "Bitte zuerst Kärtchen und Profil auswählen.";
+      teacherState.toast = "Bitte zuerst Kärtchen und Unterricht auswählen.";
       renderTeacherApp();
       return;
     }
@@ -3543,7 +4122,7 @@ function bindTeacherEvents() {
       const snapshot = await fetchTeacherSyncSnapshot();
       importTeacherSyncSnapshot(snapshot);
       teacherState.statusLine = "Kärtchen direkt verliehen.";
-      teacherState.toast = "Die Belohnung ist gespeichert und beim nächsten Sync für Lernende sichtbar.";
+      teacherState.toast = "Das Kärtchen ist gespeichert und beim nächsten Sync für Lernende sichtbar.";
       persistTeacherState();
       renderTeacherApp();
     } catch (error) {
@@ -3561,7 +4140,7 @@ function bindTeacherEvents() {
         return;
       }
 
-      if (!window.confirm("Diese direkte Kärtchen-Belohnung wirklich zurücknehmen?")) {
+      if (!window.confirm("Dieses direkt verliehene Kärtchen wirklich zurücknehmen?")) {
         return;
       }
 
@@ -3569,7 +4148,7 @@ function bindTeacherEvents() {
         await saveTeacherCardAwardOnServer("revoke", { awardId, cardId });
         const snapshot = await fetchTeacherSyncSnapshot();
         importTeacherSyncSnapshot(snapshot);
-        teacherState.statusLine = "Direkte Kärtchen-Belohnung entfernt.";
+        teacherState.statusLine = "Direkt verliehenes Kärtchen entfernt.";
         teacherState.toast = "Die direkte Vergabe wurde zurückgenommen.";
         persistTeacherState();
         renderTeacherApp();
@@ -3584,6 +4163,16 @@ function bindTeacherEvents() {
   document.querySelectorAll("[data-student-id]").forEach((button) => {
     button.addEventListener("click", () => {
       teacherState.selectedStudentId = button.dataset.studentId;
+      persistTeacherState();
+      renderTeacherApp();
+    });
+  });
+
+  document.querySelectorAll("[data-week-student-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextId = button.dataset.weekStudentId || "";
+      teacherState.selectedWeekStudentId =
+        teacherState.selectedWeekStudentId === nextId ? "" : nextId;
       persistTeacherState();
       renderTeacherApp();
     });
@@ -3631,8 +4220,8 @@ function bindTeacherEvents() {
       getDisplayName(a).localeCompare(getDisplayName(b), "de"),
     );
     teacherState.selectedStudentId = nextProfile.studentId;
-    teacherState.statusLine = "Neues Profil angelegt.";
-    teacherState.toast = "Bitte Instrument, Profilbezeichnung und Ziel ergänzen.";
+      teacherState.statusLine = "Neuer Unterricht angelegt.";
+      teacherState.toast = "Bitte Instrument, Unterrichtsbezeichnung und Ziel ergänzen.";
     persistTeacherState();
     renderTeacherApp();
   });
@@ -3645,8 +4234,8 @@ function bindTeacherEvents() {
 
     const samePersonProfiles = teacherState.students.filter((student) => getPersonId(student) === getPersonId(activeStudent));
     const confirmMessage = samePersonProfiles.length > 1
-      ? `Profil "${activeStudent.profileLabel || activeStudent.importedInstrument || "Profil"}" wirklich löschen?`
-      : `Dieses Profil ist das letzte Profil von ${getDisplayName(activeStudent)}. Wirklich alles löschen?`;
+        ? `Unterricht "${activeStudent.profileLabel || activeStudent.importedInstrument || "Unterricht"}" wirklich löschen?`
+        : `Dieser Unterricht ist der letzte Unterricht von ${getDisplayName(activeStudent)}. Wirklich alles löschen?`;
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -3657,10 +4246,10 @@ function bindTeacherEvents() {
 
     teacherState.students = nextProfiles;
     teacherState.selectedStudentId = sibling?.studentId || fallback?.studentId || "";
-    teacherState.statusLine = "Profil entfernt.";
-    teacherState.toast = samePersonProfiles.length > 1
-      ? "Das ausgewählte Profil wurde gelöscht."
-      : "Die lernende Person hatte nur dieses eine Profil und wurde vollständig entfernt.";
+      teacherState.statusLine = "Unterricht entfernt.";
+      teacherState.toast = samePersonProfiles.length > 1
+        ? "Der ausgewählte Unterricht wurde gelöscht."
+        : "Die lernende Person hatte nur diesen einen Unterricht und wurde vollständig entfernt.";
     persistTeacherState();
     renderTeacherApp();
     queueTeacherAutoSync({ roster: true });
@@ -3683,7 +4272,7 @@ function bindTeacherEvents() {
                   email: document.querySelector("#student-email")?.value?.trim() || "",
                   messengerId: document.querySelector("#student-messenger")?.value?.trim() || "",
                   classId: document.querySelector("#student-class-id")?.value || "",
-            profileLabel: document.querySelector("#student-profile-label")?.value?.trim() || "Profil",
+    profileLabel: document.querySelector("#student-profile-label")?.value?.trim() || "Unterricht",
             importedInstrument: document.querySelector("#student-instrument")?.value?.trim() || "",
             importedGoal: Number(document.querySelector("#student-goal")?.value) || 15,
           })
@@ -3721,7 +4310,7 @@ function bindTeacherEvents() {
       if (navigator.share) {
         await navigator.share({
           title: "FleißTakt Lernenden-App",
-          text: "Installiere zuerst die FleißTakt Lernenden-App und oeffne sie einmal auf dem Geraet.",
+          text: "Installiere zuerst die FleißTakt Lernenden-App und öffne sie einmal auf dem Gerät.",
           url: APP_SHARE_URL,
         });
         teacherState.statusLine = "Lernenden-App geteilt.";
@@ -3736,7 +4325,7 @@ function bindTeacherEvents() {
       }
     } catch (error) {
       teacherState.statusLine = "Lernenden-App konnte nicht geteilt werden.";
-      teacherState.toast = error?.name === "AbortError" ? "Teilen wurde abgebrochen." : "Teilen gerade nicht moeglich.";
+      teacherState.toast = error?.name === "AbortError" ? "Teilen wurde abgebrochen." : "Teilen gerade nicht möglich.";
     }
     renderTeacherApp();
   });

@@ -1,19 +1,21 @@
 # FleißTakt Sync Bridge
 
-Aktuelle Plugin-Version: `0.24.3`
+Aktuelle Plugin-Version: `0.25.9`
 
 WordPress-Plugin für zentrale FleißTakt-Verwaltung mit:
 
 - Lehrkräften
 - Klassen
 - Lernenden
-- Instrument-Profilen
+- Unterrichten
 - Lehrkraft-Zuordnungen
 - Kärtchenbibliothek
-- direkte Kärtchen-Belohnungen mit Notiz
+- direkt verliehene Kärtchen mit Notiz
 - signierten Berichtspaketen
 
 Das Plugin ist auf den Server unter [https://schwoabamunzee.marsrakete.de/](https://schwoabamunzee.marsrakete.de/) zugeschnitten und arbeitet als zentrale Sync-Brücke zwischen Lernenden-App und Lehrkräfte-App.
+
+In der Oberfläche sprechen wir bewusst von `Unterrichten`, weil das für den Alltag verständlicher ist. Technisch dürfen diese Datensätze intern weiterhin `Profile` heißen.
 
 ## Sync-Sicherheit
 
@@ -36,9 +38,9 @@ Berichte von Lernenden bleiben zusätzlich dedupliziert über `report_uuid` und 
 2. In WordPress unter `Plugins -> Installieren -> Plugin hochladen` hochladen.
 3. Aktivieren.
 4. Im Menü `FleißTakt Sync` zuerst `Einstellungen` prüfen.
-5. Danach Lehrkräfte, Klassen, Lernende, Profile und Zuordnungen anlegen.
+5. Danach Lehrkräfte, Klassen, Lernende, Unterrichte und Zuordnungen anlegen.
 6. Für jede Lehrkraft den `API-Key` in der Lehrkräfte-App hinterlegen.
-7. Für jedes Profil Lernenden-ID und Verbindungscode in der Lehrkräfte-App anzeigen oder teilen.
+7. Für jeden Unterricht Lernenden-ID und Verbindungscode in der Lehrkräfte-App anzeigen oder teilen.
 8. Unter `Einstellungen` bei Bedarf ein komplettes Plugin-Backup exportieren oder auf einem anderen Server wieder importieren.
 
 ## Backup und Serverwechsel
@@ -54,10 +56,10 @@ Das Backup enthält:
 - Lehrkräfte
 - Klassen
 - Lernende
-- Profile
+- Unterrichte
 - Zuordnungen
 - Kärtchen
-- direkte Kärtchen-Belohnungen
+- direkt verliehene Kärtchen
 - Berichte
 
 Der Import ersetzt die aktuellen Plugin-Daten auf dem Zielserver vollständig. Deshalb verlangt das Plugin:
@@ -72,16 +74,37 @@ Empfohlener Ablauf für einen Serverwechsel:
 3. Unter `Einstellungen` das Backup importieren.
 4. Danach Lehrkräfte- und Lernenden-Apps wieder mit dem neuen Server testen.
 
-## Empfohlene Reihenfolge im Backend
+## Empfohlene Reihenfolge
 
-1. Lehrkraft anlegen
-2. Klasse anlegen
-3. Lernende anlegen
-4. Instrument-Profil anlegen
-5. Profil einer Lehrkraft zuordnen
-6. Lernenden-ID und Verbindungscode in der Lehrkräfte-App abrufen
-7. Profil in der Lernenden-App mit diesen Kopplungsdaten verbinden
-8. Lehrkräfte-Key in der Lehrkräfte-App eintragen und Serverdaten laden
+1. Lehrkraft im Plugin anlegen
+2. Serverkontext im Plugin prüfen
+3. Lehrkräfte-App installieren
+4. Lehrkräfte-Key in der Lehrkräfte-App hinterlegen
+5. Klassen, Lernende, Unterrichte und Kärtchen in der Lehrkräfte-App anlegen
+6. In der Lehrkräfte-App vollständig synchronisieren
+7. Lernenden-ID und Verbindungscode in der Lehrkräfte-App anzeigen oder teilen
+8. Unterricht in der Lernenden-App mit diesen Kopplungsdaten verbinden
+
+## Plugin als Zentrale
+
+Das Plugin ist nicht nur eine technische Sync-Brücke, sondern die zentrale Verwaltungsstelle vor der Pilotphase:
+
+- Stammdaten von Lehrkräften und Lernenden
+- Unterrichte pro Lehrkraft-Kontext
+- Kärtchenbibliothek und direkt verliehene Kärtchen
+- Berichte und Aufbewahrung
+- Backup für Serverwechsel
+
+Im normalen Alltag werden Lernende, Unterrichte und Kärtchen bevorzugt in der Lehrkräfte-App gepflegt und dann mit dem Server synchronisiert. Das Plugin bleibt die Admin-Zentrale, der Ausnahmeweg und das Werkzeug für Serverwechsel, Kontrolle und Korrekturen.
+
+Die Lehrkräfte-App bleibt die angenehmere Arbeitsoberfläche im Alltag. Das Plugin ist die verlässliche Admin-Zentrale, die im Zweifel immer alle Inhalte sehen und bearbeiten kann.
+
+Neu im Admin-Überblick:
+
+- Startseite mit Server-/Sync-Überblick
+- Profiltabelle mit Klasse, zugeordneten Lehrkräften und Anzahl der Zuordnungen
+- Kärtchen-Tab mit direkter Vergabeübersicht inklusive Notiz und Verleihzeit
+- Filter und Verlauf für direkte Kärtchen-Vergaben direkt im Kärtchen-Tab
 
 ## REST-Endpunkte und URLs
 
@@ -99,7 +122,7 @@ Empfohlener Ablauf für einen Serverwechsel:
   `/wp-json/fleisstakt-sync/v1/teacher-roster`
 - Lehrkräfte-App Kärtchen speichern:
   `/wp-json/fleisstakt-sync/v1/teacher-cards`
-- Lehrkräfte-App direkte Kärtchen-Belohnung:
+- Lehrkräfte-App direkte Kärtchen-Vergabe:
   `/wp-json/fleisstakt-sync/v1/teacher-card-awards`
 - Öffentlicher Profilpaket-Link:
   `/wp-json/fleisstakt-sync/v1/profile-package`
@@ -125,10 +148,10 @@ Das Plugin legt eigene WordPress-Tabellen an für:
 - Lehrkräfte
 - Klassen
 - Lernende
-- Instrument-Profile
+- Unterrichte
 - Lehrkraft-Zuordnungen
 - Kärtchen
-- direkte Kärtchen-Belohnungen
+- direkt verliehene Kärtchen
 - Berichte
 
 Berichte werden nicht als Datei in die Mediathek gelegt, sondern als geprüfte JSON-Datensätze in der Datenbank gespeichert.
@@ -154,22 +177,24 @@ Lernenden-App:
 
 - manueller Berichtsexport bleibt erhalten
 - zusätzlich kann ein Bericht per Knopfdruck online gesendet werden
-- zusätzlich kann die App Profil und Lehrkräfte-Kärtchen direkt vom Server synchronisieren
+- zusätzlich kann die App Unterricht und Lehrkräfte-Kärtchen direkt vom Server synchronisieren
 - die Erstkopplung läuft bevorzugt über Lernenden-ID und 4-stelligen Verbindungscode
-- Profilpakete bleiben als Fallback erhalten
+- Profilpakete bleiben als Ausnahmeweg erhalten
 
 Lehrkräfte-App:
 
 - manueller Import von Berichtspaketen bleibt erhalten
 - Backup-Export und -Import bleiben erhalten
 - zusätzlich kann die App Berichte, Klassen und Kärtchen direkt vom Server laden
-- zusätzlich kann die App Kärtchen direkt an einzelne Lernprofile verleihen und mit Notiz versehen
+- zusätzlich kann die App Kärtchen direkt an einzelne Unterrichte verleihen und mit Notiz versehen
+- der normale Ablauf für neue Geräte geht über QR-Code oder Lernenden-ID plus Verbindungscode
+- Profilpakete bleiben nur noch als Fallback für Ausnahmefälle
 
 ## Release-Stand
 
-`0.11.0`
+`0.24.7`
 
-- zentrale Verwaltung für Lehrkräfte, Klassen, Lernende und Instrument-Profile
+- zentrale Verwaltung für Lehrkräfte, Klassen, Lernende und Unterrichte
 - signierter Berichtsempfang per REST-API
 - Lehrkräfte-Sync für Klassen, Berichte und Kärtchen
 - Lehrkräfte-App kann Klassen und persönliche Daten der Lernenden direkt auf den Server speichern
@@ -180,13 +205,17 @@ Lehrkräfte-App:
 - Profilpakete tragen im Dateinamen jetzt auch den Namen der Lernenden
 - Lehrkräfte-App kann Profilpakete jetzt direkt vom Server laden, teilen und als QR-Code bereitstellen
 - Plugin liefert dafür geschützte Lehrkräfte-Endpunkte und öffentliche Freigabelinks für einzelne Profilpakete
-- Lernenden-App kann jetzt Profil und zugewiesene Lehrkräfte-Kärtchen direkt per `student-sync` vom Server nachladen
-- Lehrkräfte können Kärtchen jetzt direkt als Belohnung an einzelne Lernprofile verleihen
-- direkte Kärtchen-Belohnungen können eine Notiz der Lehrkraft enthalten
+- Lernenden-App kann jetzt Unterricht und zugewiesene Lehrkräfte-Kärtchen direkt per `student-sync` vom Server nachladen
+- Lehrkräfte können Kärtchen jetzt direkt an einzelne Unterrichte verleihen
+- direkt verliehene Kärtchen können eine Notiz der Lehrkraft enthalten
 - Lernenden-App zeigt direkt verliehene Kärtchen sofort als erreicht an
-- Plugin-Backups enthalten jetzt auch direkte Kärtchen-Belohnungen
-- jedes Profil hat jetzt zusätzlich einen dauerhaften 4-stelligen Verbindungscode für die Erstkopplung
-- Lernenden-App kann sich damit direkt per `connect-profile` an ein Lernprofil anbinden
+- Plugin-Startseite zeigt jetzt zusätzlich Server-/Sync-Kontext und die letzten direkt verliehenen Kärtchen
+- Profil- und Kärtchen-Tab geben mehr Überblick über Lehrkraft-Zuordnungen und direkte Vergaben
+- direkte Kärtchen-Vergaben lassen sich jetzt im Plugin nach Kärtchen, Lehrkraft und Unterricht filtern
+- pro ausgewähltem Kärtchen gibt es jetzt einen eigenen Vergabeverlauf direkt im Kärtchen-Tab
+- Plugin-Backups enthalten jetzt auch direkt verliehene Kärtchen
+- jeder Unterricht hat jetzt zusätzlich einen dauerhaften 4-stelligen Verbindungscode für die Erstkopplung
+- Lernenden-App kann sich damit direkt per `connect-profile` an einen Unterricht anbinden
 - Lehrkräfte-App zeigt Lernenden-ID und Verbindungscode direkt an und kann diese Kopplungsdaten teilen
 - Profilpakete für die Lernenden-App
 - serverseitige Deduplizierung und Aufbewahrungslogik

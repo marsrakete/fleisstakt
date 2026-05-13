@@ -139,6 +139,9 @@ const state = {
   syncUploadToken: "",
   syncSiteLabel: "",
   syncStatusNote: "",
+  syncState: "idle",
+  syncLastSuccessAt: "",
+  syncLastError: "",
   activeFeedbackRound: null,
   feedbackAnswers: {},
   feedbackStatus: "idle",
@@ -236,6 +239,76 @@ function connectionScannerText() {
     return state.scannerMessage || "Halte den QR-Code ruhig in die Kamera.";
   }
   return state.scannerMessage || "Der QR-Code aus der Lehrkräfte-App kann direkt mit der Kamera oder über ein Bild erkannt werden.";
+}
+
+function formatStudentDateTime(value) {
+  if (!value) {
+    return "Noch nie";
+  }
+
+  return new Date(value).toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function setStudentSyncState(syncState, note = "", options = {}) {
+  state.syncState = syncState;
+  state.syncStatusNote = note;
+  state.syncLastError = syncState === "error" ? note : "";
+  if (options.markSuccess) {
+    state.syncLastSuccessAt = new Date().toISOString();
+  }
+}
+
+function describeStudentSyncState() {
+  if (!state.syncUploadToken) {
+    return {
+      tone: "idle",
+      title: "Noch nicht mit einer Lehrkraft verbunden",
+      text: "Verbinde dieses Gerät zuerst per QR-Code oder mit Lernenden-ID und Verbindungscode.",
+    };
+  }
+
+  if (studentSyncInProgress) {
+    return {
+      tone: "running",
+      title: "Server-Sync läuft gerade",
+    text: state.syncStatusNote || "Bericht und zugewiesene Kärtchen werden gerade mit dem Server abgeglichen.",
+    };
+  }
+
+  if (state.syncState === "error") {
+    return {
+      tone: "error",
+      title: "Server-Sync braucht Aufmerksamkeit",
+      text: state.syncStatusNote || "Der letzte Serverabgleich hat nicht vollständig geklappt.",
+    };
+  }
+
+  if (state.syncState === "pending") {
+    return {
+      tone: "pending",
+      title: "Lokale Änderungen warten auf den Server",
+      text: state.syncStatusNote || "Der letzte Eintrag ist gespeichert, wurde aber noch nicht vollständig mit dem Server abgeglichen.",
+    };
+  }
+
+  if (state.syncLastSuccessAt) {
+    return {
+      tone: "ok",
+      title: "Serverstand aktuell",
+      text: state.syncStatusNote || `Zuletzt synchronisiert am ${formatStudentDateTime(state.syncLastSuccessAt)}.`,
+    };
+  }
+
+  return {
+    tone: "idle",
+    title: "Verbunden und bereit",
+    text: state.syncStatusNote || "Der Unterricht ist verbunden. Der erste Eintrag kann jetzt mit dem Server abgeglichen werden.",
+  };
 }
 
 function openSyncStatus(title, steps) {
@@ -669,6 +742,9 @@ function normalizeStoredProfile(profile = {}) {
     syncUploadToken: profile.syncUploadToken || profile.uploadToken || "",
     syncSiteLabel: profile.syncSiteLabel || profile.siteLabel || "",
     syncStatusNote: profile.syncStatusNote || "",
+    syncState: ["idle", "pending", "running", "ok", "error"].includes(profile.syncState) ? profile.syncState : "idle",
+    syncLastSuccessAt: profile.syncLastSuccessAt || "",
+    syncLastError: profile.syncLastError || "",
     activeFeedbackRound: normalizeFeedbackRound(profile.activeFeedbackRound),
     feedbackAnswers: profile.feedbackAnswers && typeof profile.feedbackAnswers === "object" ? profile.feedbackAnswers : {},
     feedbackStatus: ["idle", "ready", "answered", "sending", "success", "error"].includes(profile.feedbackStatus) ? profile.feedbackStatus : "idle",
@@ -694,6 +770,9 @@ function currentProfileSnapshot(overrides = {}) {
     syncUploadToken: state.syncUploadToken,
     syncSiteLabel: state.syncSiteLabel,
     syncStatusNote: state.syncStatusNote,
+    syncState: state.syncState,
+    syncLastSuccessAt: state.syncLastSuccessAt,
+    syncLastError: state.syncLastError,
     activeFeedbackRound: state.activeFeedbackRound,
     feedbackAnswers: state.feedbackAnswers,
     feedbackStatus: state.feedbackStatus,
@@ -742,10 +821,28 @@ function applyStoredProfile(profile) {
   state.syncUploadToken = normalized.syncUploadToken;
   state.syncSiteLabel = normalized.syncSiteLabel;
   state.syncStatusNote = normalized.syncStatusNote;
+  state.syncState = normalized.syncState;
+  state.syncLastSuccessAt = normalized.syncLastSuccessAt;
+  state.syncLastError = normalized.syncLastError;
   state.activeFeedbackRound = normalized.activeFeedbackRound;
   state.feedbackAnswers = normalized.feedbackAnswers;
   state.feedbackStatus = normalized.feedbackStatus;
   state.feedbackError = normalized.feedbackError;
+}
+
+function isSameStoredProfile(left = {}, right = {}) {
+  const leftStorageId = `${left.storageId || ""}`.trim();
+  const rightStorageId = `${right.storageId || ""}`.trim();
+  const leftProfileUuid = `${left.profileUuid || ""}`.trim();
+  const rightProfileUuid = `${right.profileUuid || ""}`.trim();
+  const leftStudentId = `${left.studentId || left.appStudentId || ""}`.trim();
+  const rightStudentId = `${right.studentId || right.appStudentId || ""}`.trim();
+
+  return Boolean(
+    (leftStorageId && rightStorageId && leftStorageId === rightStorageId)
+    || (leftProfileUuid && rightProfileUuid && leftProfileUuid === rightProfileUuid)
+    || (leftStudentId && rightStudentId && leftStudentId === rightStudentId),
+  );
 }
 
 function activateStoredProfile(profileId) {
@@ -791,6 +888,9 @@ function hydrateState() {
       syncUploadToken: parsed.syncUploadToken || "",
       syncSiteLabel: parsed.syncSiteLabel || "",
       syncStatusNote: parsed.syncStatusNote || "",
+      syncState: parsed.syncState || "idle",
+      syncLastSuccessAt: parsed.syncLastSuccessAt || "",
+      syncLastError: parsed.syncLastError || "",
       practiceCategories: normalizePracticeCategories(parsed.practiceCategories || defaultPracticeCategories),
     });
     state.profileLibrary = Array.isArray(parsed.profileLibrary) && parsed.profileLibrary.length
@@ -829,6 +929,9 @@ function persistState() {
       syncUploadToken: state.syncUploadToken,
       syncSiteLabel: state.syncSiteLabel,
       syncStatusNote: state.syncStatusNote,
+      syncState: state.syncState,
+      syncLastSuccessAt: state.syncLastSuccessAt,
+      syncLastError: state.syncLastError,
       customCards: state.customCards,
       profileLibrary: state.profileLibrary,
       activeProfileId: state.activeProfileId,
@@ -857,6 +960,9 @@ function exportBackupPayload() {
       syncUploadToken: state.syncUploadToken,
       syncSiteLabel: state.syncSiteLabel,
       syncStatusNote: state.syncStatusNote,
+      syncState: state.syncState,
+      syncLastSuccessAt: state.syncLastSuccessAt,
+      syncLastError: state.syncLastError,
       customCards: state.customCards,
       profileLibrary: state.profileLibrary,
       activeProfileId: state.activeProfileId,
@@ -938,6 +1044,9 @@ async function importBackupFile(file) {
       syncUploadToken: backup.syncUploadToken || "",
       syncSiteLabel: backup.syncSiteLabel || "",
       syncStatusNote: backup.syncStatusNote || "",
+      syncState: backup.syncState || "idle",
+      syncLastSuccessAt: backup.syncLastSuccessAt || "",
+      syncLastError: backup.syncLastError || "",
       practiceCategories: normalizePracticeCategories(backup.practiceCategories || defaultPracticeCategories),
       })];
   state.activeProfileId = backup.activeProfileId || state.profileLibrary[0]?.storageId || "";
@@ -1035,7 +1144,11 @@ function parseProfilePackage(text) {
   return payload;
 }
 
-function applyProfilePackagePayload(payload) {
+function applyProfilePackagePayload(payload, options = {}) {
+  const {
+    activateProfileScreen = true,
+    closeSettings = true,
+  } = options;
   syncCurrentStateIntoProfileLibrary();
   const nextProfile = normalizeStoredProfile({
     storageId: payload.profileUuid || payload.appStudentId,
@@ -1053,23 +1166,45 @@ function applyProfilePackagePayload(payload) {
     syncUploadToken: payload.uploadToken,
     syncSiteLabel: payload.siteLabel || "",
   });
-  const existingIndex = state.profileLibrary.findIndex((profile) => profile.storageId === nextProfile.storageId);
+  const existingIndex = state.profileLibrary.findIndex((profile) => isSameStoredProfile(profile, nextProfile));
+  const existingProfile = existingIndex >= 0
+    ? state.profileLibrary[existingIndex]
+    : isSameStoredProfile(currentProfileSnapshot(), nextProfile)
+      ? currentProfileSnapshot()
+      : null;
+
+  const mergedProfile = existingProfile
+    ? normalizeStoredProfile({
+        ...existingProfile,
+        ...nextProfile,
+        storageId: nextProfile.storageId || existingProfile.storageId,
+        entries: Array.isArray(existingProfile.entries) ? existingProfile.entries : [],
+        customCards: Array.isArray(existingProfile.customCards) ? existingProfile.customCards : [],
+        practiceCategories: Array.isArray(existingProfile.practiceCategories) && existingProfile.practiceCategories.length
+          ? existingProfile.practiceCategories
+          : nextProfile.practiceCategories,
+        activeFeedbackRound: existingProfile.activeFeedbackRound || nextProfile.activeFeedbackRound,
+        feedbackAnswers: existingProfile.feedbackAnswers || nextProfile.feedbackAnswers,
+        feedbackStatus: existingProfile.feedbackStatus || nextProfile.feedbackStatus,
+        feedbackError: existingProfile.feedbackError || nextProfile.feedbackError,
+      })
+    : nextProfile;
+
   if (existingIndex >= 0) {
-    state.profileLibrary[existingIndex] = {
-      ...state.profileLibrary[existingIndex],
-      ...nextProfile,
-      entries: state.profileLibrary[existingIndex].entries,
-      customCards: state.profileLibrary[existingIndex].customCards,
-    };
+    state.profileLibrary[existingIndex] = mergedProfile;
   } else {
-    state.profileLibrary = [...state.profileLibrary, nextProfile];
+    state.profileLibrary = [...state.profileLibrary, mergedProfile];
   }
 
-  applyStoredProfile(nextProfile);
-  state.activeScreen = "profile";
-  state.profilePanel = "profil";
-  state.settingsOpen = false;
-  state.settingsFocusId = "";
+  applyStoredProfile(mergedProfile);
+  if (activateProfileScreen) {
+    state.activeScreen = "profile";
+    state.profilePanel = "profil";
+  }
+  if (closeSettings) {
+    state.settingsOpen = false;
+    state.settingsFocusId = "";
+  }
   state.profileImportConfirmOpen = false;
   state.pendingProfileImport = null;
   applyModalScrollLock();
@@ -1157,7 +1292,10 @@ async function syncStudentAppWithServer() {
 
 function importStudentSyncSnapshot(snapshot) {
   if (snapshot?.profile) {
-    applyProfilePackagePayload(snapshot.profile);
+    applyProfilePackagePayload(snapshot.profile, {
+      activateProfileScreen: false,
+      closeSettings: false,
+    });
   }
 
   if (Array.isArray(snapshot?.categories)) {
@@ -1191,12 +1329,7 @@ function importStudentSyncSnapshot(snapshot) {
     state.feedbackError = "";
   }
 
-  state.syncStatusNote = `Zuletzt mit dem Server synchronisiert: ${new Date().toLocaleString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })}.`;
+    setStudentSyncState("ok", "Profil, Kärtchen und Serverdaten sind aktuell.", { markSuccess: true });
 
   persistState();
 }
@@ -1254,7 +1387,7 @@ async function runBackgroundStudentSync() {
   }
 
   studentSyncInProgress = true;
-  state.syncStatusNote = "Änderungen gespeichert. Server-Sync läuft im Hintergrund...";
+  setStudentSyncState("running", "Änderungen gespeichert. Server-Sync läuft im Hintergrund...");
   persistState();
   render();
 
@@ -1264,7 +1397,7 @@ async function runBackgroundStudentSync() {
       await syncStudentAppWithServer();
     } while (studentAutoSyncPending);
   } catch {
-    state.syncStatusNote = "Änderungen gespeichert. Server-Sync ausstehend.";
+    setStudentSyncState("error", "Änderungen gespeichert. Server-Sync ausstehend.");
     persistState();
     render();
   } finally {
@@ -1514,6 +1647,10 @@ function resetStudentAppForTesting() {
   state.syncBaseUrl = DEFAULT_SYNC_BASE_URL;
   state.syncUploadToken = "";
   state.syncSiteLabel = "";
+  state.syncStatusNote = "";
+  state.syncState = "idle";
+  state.syncLastSuccessAt = "";
+  state.syncLastError = "";
   state.activeFeedbackRound = null;
   state.feedbackAnswers = {};
   state.feedbackStatus = "idle";
@@ -1561,29 +1698,25 @@ async function connectProfileFlow(studentId, connectCode) {
     const snapshot = await connectProfileWithServer(studentId, connectCode);
     updateSyncStatus("connect", "done", "Profil wurde gefunden. Daten werden jetzt übernommen...");
 
-    updateSyncStatus("apply", "running", "Profil und Ziel-Kärtchen werden auf dem Gerät gespeichert...");
+    updateSyncStatus("apply", "running", "Profil und Kärtchen werden auf dem Gerät gespeichert...");
     importStudentSyncSnapshot(snapshot);
     state.settingsOpen = false;
     state.settingsFocusId = "";
     state.connectStudentIdDraft = state.studentId;
     state.connectCodeDraft = "";
-    state.syncStatusNote = `Verbunden und bereit für Server-Sync seit ${new Date().toLocaleString("de-DE", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })}.`;
+    setStudentSyncState("ok", "Unterricht verbunden. Der nächste Eintrag wird automatisch mit dem Server abgeglichen.", { markSuccess: true });
     state.activeScreen = "profile";
     state.profilePanel = "profil";
     applyModalScrollLock();
-    updateSyncStatus("apply", "done", "Das Lernprofil ist jetzt verbunden.");
-    finishSyncStatus("success", `Profil ${state.profileName} wurde erfolgreich verbunden.`, true);
+    updateSyncStatus("apply", "done", "Der Unterricht ist jetzt verbunden.");
+    finishSyncStatus("success", `Unterricht ${state.profileName} wurde erfolgreich verbunden.`, true);
     state.celebrationText = `Profil ${state.profileName} verbunden.`;
   } catch (error) {
     const runningStep = state.syncStatusSteps.find((step) => step.state === "running");
     if (runningStep) {
       updateSyncStatus(runningStep.id, "error");
     }
+    setStudentSyncState("error", error?.message || "Verbindung zur Lehrkraft gerade nicht möglich.");
     finishSyncStatus("error", error?.message || "Verbindung zur Lehrkraft gerade nicht möglich.");
     state.celebrationText = error?.message || "Verbindung zur Lehrkraft gerade nicht möglich.";
   }
@@ -1997,7 +2130,7 @@ function getCards(stats) {
       ...card,
       manuallyAwarded,
       unlocked,
-      statusLabel: manuallyAwarded ? "Verliehen" : unlocked ? "Ge&shy;sam&shy;melt" : noConditionReward ? "Belohnung" : "Bald frei",
+      statusLabel: manuallyAwarded ? "Verliehen" : unlocked ? "Ge&shy;sam&shy;melt" : noConditionReward ? "Direkt verliehen" : "Bald frei",
       progressPercent: manuallyAwarded ? 100 : cardProgressPercent(card, stats),
       progressText: manuallyAwarded ? "Direkt von der Lehrkraft verliehen" : cardProgressText(card, stats),
     };
@@ -2025,12 +2158,12 @@ function todayScreen() {
   const unlockedCount = cards.filter((card) => card.unlocked).length;
   const hasManagedProfile = Boolean(state.syncUploadToken);
   const heroTitle = hasManagedProfile
-    ? "Einträge sichtbar machen und zugewiesene Ziele im Blick behalten."
+    ? "Üben und Kärtchen im Blick."
     : "Jeder Eintrag bringt ein neues Kärtchen näher.";
   const heroCopy = hasManagedProfile
-    ? "Schnell protokollieren, den Server synchron halten und sehen, welche Ziel-Kärtchen schon erreicht oder direkt verliehen wurden."
+    ? "Kurz festhalten, was heute gut geklappt hat."
     : "Schnell protokollieren, Serie halten und kleine Erfolgsmomente sammeln.";
-  const nextLabel = hasManagedProfile ? "Nächstes Ziel-Kärtchen" : "Nächstes Fleiß-Kärtchen";
+  const nextLabel = "Nächstes Kärtchen";
 
   return `
     <section class="screen screen-today">
@@ -2113,6 +2246,7 @@ function todayScreen() {
 
 function logScreen() {
   const categories = getPracticeCategories();
+  const hasManagedProfile = Boolean(state.syncUploadToken);
   return `
     <section class="screen screen-log">
       <div class="section-head">
@@ -2122,15 +2256,20 @@ function logScreen() {
 
       <label class="field">
         <span>Instrument</span>
-        <select id="instrument-select">
-          ${instruments
-            .map(
-              (item) => `
-                <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
-              `,
-            )
-            .join("")}
-        </select>
+        ${
+          hasManagedProfile
+            ? `<div class="field-static">${escapeHtml(state.instrument)}</div>
+               <small class="field-hint">Dieses Instrument kommt aus dem verbundenen Unterricht.</small>`
+            : `<select id="instrument-select">
+                ${instruments
+                  .map(
+                    (item) => `
+                      <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
+                    `,
+                  )
+                  .join("")}
+              </select>`
+        }
       </label>
 
       <label class="field">
@@ -2169,7 +2308,7 @@ function cardsScreen() {
   const cards = getCards(stats);
   const unlockedCount = cards.filter((card) => card.unlocked).length;
   const hasManagedProfile = Boolean(state.syncUploadToken);
-  const heading = hasManagedProfile ? "Ziel-Kärtchen" : "Fleiß-Kärtchen";
+  const heading = "Kärtchen";
   const intro = hasManagedProfile
     ? "Diese Ziele wurden über das Profil der Lehrkräfte-App zugewiesen und beim Server-Sync aktualisiert."
     : "Sammle kleine Etappensiege statt trockener Statistiken.";
@@ -2189,7 +2328,7 @@ function cardsScreen() {
         </div>
         <div class="reward-symbol">◎</div>
         <div class="reward-copy">
-          <h3>Noch keine Ziel-Kärtchen</h3>
+          <h3>Noch keine Kärtchen</h3>
           <p>Bitte die App mit dem Server synchronisieren oder in der Lehrkräfte-App neue Ziele zuweisen lassen.</p>
           <p class="reward-progress">Sobald Ziele zugewiesen sind, erscheinen sie hier automatisch.</p>
         </div>
@@ -2240,8 +2379,11 @@ function cardsScreen() {
                   ${
                     card.manuallyAwarded
                       ? `
-                        <p class="reward-award-meta">${card.award?.awardedBy ? `Von ${escapeHtml(card.award.awardedBy)}` : "Direkt verliehen"}${card.award?.awardedAt ? ` · ${escapeHtml(new Date(card.award.awardedAt).toLocaleDateString("de-DE"))}` : ""}</p>
-                        ${card.award?.note ? `<p class="reward-award-note"><span>Nachricht der Lehrkraft</span>${escapeHtml(card.award.note)}</p>` : ""}
+                        <div class="reward-award-note">
+                          <span>Direkt verliehen</span>
+                          <strong>${card.award?.awardedBy ? `Von ${escapeHtml(card.award.awardedBy)}` : "Von deiner Lehrkraft"}${card.award?.awardedAt ? ` · ${escapeHtml(new Date(card.award.awardedAt).toLocaleDateString("de-DE"))}` : ""}</strong>
+                          ${card.award?.note ? `<p>„${escapeHtml(card.award.note)}“</p>` : `<p>Dieses Kärtchen wurde dir persönlich verliehen.</p>`}
+                        </div>
                       `
                       : ""
                   }
@@ -2309,6 +2451,7 @@ function profileScreen() {
   const activeTeacherCards = state.customCards.filter((card) => card.status === "active").length;
   const profiles = profileSwitcherOptions();
   const activeProfileLabel = profiles.find((profile) => profile.storageId === state.activeProfileId)?.profileLabel || state.instrument || "Profil";
+  const syncSummary = describeStudentSyncState();
 
   return `
     <section class="screen screen-profile">
@@ -2332,24 +2475,29 @@ function profileScreen() {
           ? `
       <form class="settings-form" id="profile-form">
         <div class="profile-connection-card">
-          <strong>Aktives Lernprofil</strong>
+          <strong>Aktiver Unterricht</strong>
           <p>${escapeHtml(state.profileName || "Unbekannt")} · ${escapeHtml(activeProfileLabel)} · Ziel ${state.goal} Minuten</p>
-          <small>${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Lernprofil mit dem Server verbunden."}</small>
+          <small>${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Unterricht mit dem Server verbunden."}</small>
         </div>
+        <article class="profile-sync-card tone-${escapeHtml(syncSummary.tone)}">
+          <strong>${escapeHtml(syncSummary.title)}</strong>
+          <p>${escapeHtml(syncSummary.text)}</p>
+          <small>${state.syncLastSuccessAt ? `Letzter erfolgreicher Server-Sync: ${escapeHtml(formatStudentDateTime(state.syncLastSuccessAt))}.` : "Sobald der Unterricht verbunden ist, erscheint hier auch der letzte erfolgreiche Server-Sync."}</small>
+        </article>
         <label class="field">
-          <span>Profil umschalten</span>
+          <span>Unterricht umschalten</span>
           <select id="active-profile-select">
             ${profiles
               .map(
                 (profile) => `
                   <option value="${escapeHtml(profile.storageId)}" ${profile.storageId === state.activeProfileId ? "selected" : ""}>
-                    ${escapeHtml(`${profile.profileName} · ${profile.profileLabel || profile.instrument || "Profil"}`)}
+                    ${escapeHtml(`${profile.profileName} · ${profile.profileLabel || profile.instrument || "Unterricht"}`)}
                   </option>
                 `,
               )
               .join("")}
           </select>
-          <small class="field-hint">Jedes Profil steht für einen eigenen Unterrichtskontext mit eigener Lehrkraft-Anbindung.</small>
+          <small class="field-hint">Jeder Unterricht steht für einen eigenen Lernweg mit eigener Lehrkraft-Anbindung.</small>
         </label>
         <label class="field">
           <span>Lernenden-ID</span>
@@ -2361,19 +2509,23 @@ function profileScreen() {
           <input id="profile-name" type="text" value="${escapeHtml(state.profileName)}" maxlength="24" ${hasManagedProfile ? "readonly" : ""} />
           ${hasManagedProfile ? '<small class="field-hint">Der Name kommt aus dem Profil der Lehrkräfte-App und wird hier nicht lokal überschrieben.</small>' : ""}
         </label>
-          <label class="field">
-            <span>Hauptinstrument</span>
-            <select id="profile-instrument" ${hasManagedProfile ? "disabled" : ""}>
-              ${instruments
-                .map(
-                  (item) => `
-                    <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
-                  `,
-                )
-                .join("")}
-            </select>
-            ${hasManagedProfile ? '<small class="field-hint">Dieses Instrument kommt aus dem Profil der Lehrkräfte-App und kann hier nicht geändert werden.</small>' : ""}
-          </label>
+        <label class="field">
+          <span>Hauptinstrument</span>
+          ${
+            hasManagedProfile
+              ? `<div class="field-static">${escapeHtml(state.instrument)}</div>
+                 <small class="field-hint">Dieses Instrument kommt aus dem Profil der Lehrkräfte-App und kann hier nicht geändert werden.</small>`
+              : `<select id="profile-instrument">
+                  ${instruments
+                    .map(
+                      (item) => `
+                        <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
+                      `,
+                    )
+                    .join("")}
+                </select>`
+          }
+        </label>
         <label class="field">
           <span>Tagesziel in Minuten</span>
           <input id="profile-goal" type="range" min="5" max="60" step="5" value="${state.goal}" ${hasManagedProfile ? "disabled" : ""} />
@@ -2383,7 +2535,7 @@ function profileScreen() {
         ${
           hasManagedProfile
             ? `<button class="primary-button sync-action" id="profile-sync-button" type="button">Mit Server synchronisieren</button>`
-            : `<button class="primary-button" id="save-profile" type="submit">Profil speichern</button>`
+            : `<button class="primary-button" id="save-profile" type="submit">Unterricht speichern</button>`
         }
         <p class="profile-note">${state.syncUploadToken ? `Server verbunden: ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}. Der Sync sendet den aktuellen Bericht und lädt zugewiesene Kärtchen neu.` : "Noch keine Server-Kopplung aktiv. Verbinde dieses Gerät in den Einstellungen mit Lernenden-ID und Verbindungscode."}</p>
         ${state.syncUploadToken ? `<p class="profile-note">${escapeHtml(state.syncStatusNote || "Nach dem nächsten Eintrag oder einem manuellen Sync wird der Serverstand aktualisiert.")}</p>` : ""}
@@ -2524,7 +2676,7 @@ function profileScreen() {
             ? `
               <article class="mentor-card">
                 <strong>Noch keine Rückmeldung verfügbar</strong>
-                <p>Verbinde zuerst ein Lernprofil mit einer Lehrkraft. Danach kann hier eine anonyme Rückmeldung auftauchen.</p>
+                <p>Verbinde zuerst einen Unterricht mit einer Lehrkraft. Danach kann hier eine anonyme Rückmeldung auftauchen.</p>
               </article>
             `
             : !state.activeFeedbackRound
@@ -2686,9 +2838,36 @@ function render() {
 
           <section class="settings-block">
             <h3>Mit Lehrkraft verbinden</h3>
-            <p class="settings-copy">Die Lehrkraft teilt für das gewählte Profil einen QR-Code oder die Kombination aus Lernenden-ID und Verbindungscode. Lernende scannen den QR-Code oder geben die Daten hier ein und verbinden so ihr Gerät mit dem richtigen Profil.</p>
+            <p class="settings-copy">So startest du: App öffnen, dann entweder den QR-Code aus der Lehrkräfte-App scannen oder Lernenden-ID und Verbindungscode eingeben.</p>
+            <article class="profile-sync-card tone-${escapeHtml(describeStudentSyncState().tone)}">
+              <strong>${escapeHtml(describeStudentSyncState().title)}</strong>
+              <p>${escapeHtml(describeStudentSyncState().text)}</p>
+              <small>${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}.` : "Noch kein Unterricht verbunden."}</small>
+            </article>
+            <div class="help-list compact-help-list">
+              <article class="help-step">
+                <strong>1. App öffnen</strong>
+                <p>Lernenden-App installieren und öffnen.</p>
+              </article>
+              <article class="help-step">
+                <strong>2. Unterricht koppeln</strong>
+                <p>Die Lehrkraft zeigt dir entweder einen QR-Code oder gibt dir Lernenden-ID und Verbindungscode.</p>
+              </article>
+              <article class="help-step">
+                <strong>3. QR oder manuelle Eingabe wählen</strong>
+                <p>Du brauchst nur einen der beiden Wege. Beides verbindet denselben Unterricht.</p>
+              </article>
+            </div>
+            <div class="settings-choice-block">
+              <strong>Weg A: QR-Code scannen</strong>
+              <p class="settings-copy">Am schnellsten mit der Kamera direkt aus der Lehrkräfte-App.</p>
+            </div>
             <div class="settings-actions settings-actions-single">
               <button class="secondary-action sync-action" type="button" id="open-qr-scanner">QR-Code scannen</button>
+            </div>
+            <div class="settings-choice-block">
+              <strong>Weg B: Lernenden-ID und Verbindungscode eingeben</strong>
+              <p class="settings-copy">Diesen Weg nutzt du, wenn kein QR-Code zur Hand ist.</p>
             </div>
             <div class="settings-connect-form" id="connect-profile-form">
               <label class="field settings-field">
@@ -2703,11 +2882,15 @@ function render() {
                 <button class="secondary-action sync-action" type="button" id="connect-profile-button">Mit Lehrkraft verbinden</button>
               </div>
             </div>
-            <div class="settings-actions">
-              <button class="secondary-action sync-action" type="button" id="student-sync-button" ${state.syncUploadToken ? "" : "disabled"}>Mit Server synchronisieren</button>
+            <div class="settings-choice-block">
+              <strong>Danach: Mit dem Server synchronisieren</strong>
+              <p class="settings-copy">Nach der Kopplung holt dieser Schritt neue Kärtchen vom Server und sendet deinen aktuellen Bericht zurück.</p>
             </div>
-            <p class="settings-copy">${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Lernprofil verbunden."}</p>
-            <p class="settings-copy">Fallback: Wenn QR-Code oder Code-Eingabe nicht klappen, kannst du weiterhin ein Profilpaket importieren.</p>
+            <div class="settings-actions">
+              <button class="secondary-action sync-action" type="button" id="student-sync-button" ${state.syncUploadToken ? "" : "disabled"}>Jetzt mit dem Server synchronisieren</button>
+            </div>
+            <p class="settings-copy">${state.syncStatusNote ? escapeHtml(state.syncStatusNote) : (state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Unterricht verbunden.")}</p>
+            <p class="settings-copy">Ausnahmeweg nur für seltene Fälle: Profilpaket importieren.</p>
             <div class="settings-actions">
               <label class="secondary-action settings-file-label" for="profile-package-input">Profilpaket importieren</label>
               <input id="profile-package-input" type="file" accept="application/json,.json" hidden />
@@ -2774,8 +2957,8 @@ function render() {
                 <p>Am einfachsten per QR-Code aus der Lehrkräfte-App, alternativ mit Lernenden-ID und Verbindungscode.</p>
               </article>
               <article class="help-step">
-                <strong>2. Profil laden</strong>
-                <p>Name, Instrument, Profilbezeichnung und Tagesziel kommen danach direkt vom Server.</p>
+                <strong>2. Unterricht laden</strong>
+                <p>Name, Instrument, Unterrichtsbezeichnung und Tagesziel kommen danach direkt vom Server.</p>
               </article>
               <article class="help-step">
                 <strong>3. Übeeinheit eintragen</strong>
@@ -2783,7 +2966,7 @@ function render() {
               </article>
               <article class="help-step">
                 <strong>4. Mit Server synchronisieren</strong>
-                <p>So landen Bericht und Fortschritt bei den Lehrkräften und neue Ziel-Kärtchen kommen zurück.</p>
+                <p>So landen Bericht und Fortschritt bei den Lehrkräften und neue Kärtchen kommen zurück.</p>
               </article>
               <article class="help-step">
                 <strong>5. Bei Gerätewechsel Backup nutzen</strong>
@@ -2801,8 +2984,8 @@ function render() {
         <dialog class="settings-dialog" id="profile-import-confirm-dialog">
           <form method="dialog" class="settings-sheet" tabindex="-1">
             <div class="section-head">
-              <h2>Profil wirklich ersetzen?</h2>
-              <p>Dieses Gerät ist bereits mit einem anderen Lernprofil verbunden.</p>
+              <h2>Unterricht wirklich ersetzen?</h2>
+              <p>Dieses Gerät ist bereits mit einem anderen Unterricht verbunden.</p>
             </div>
 
             <section class="settings-block">
@@ -2904,7 +3087,7 @@ function render() {
               <div class="confirm-summary">
                 <article class="confirm-card">
                   <strong>Was gelöscht wird</strong>
-                  <p>Alle Lernprofile, Einträge, lokalen Kärtchen und die aktuelle Server-Kopplung auf diesem Gerät.</p>
+                  <p>Alle Unterrichte, Einträge, lokalen Kärtchen und die aktuelle Server-Kopplung auf diesem Gerät.</p>
                 </article>
                 <article class="confirm-card">
                   <strong>Vorher empfohlen</strong>
@@ -3548,7 +3731,7 @@ function bindEvents() {
     shareAppButton.addEventListener("click", async () => {
       const payload = {
         title: "FleißTakt",
-        text: "FleißTakt hilft Musiklernenden dabei, Übezeit festzuhalten und Fleiß-Kärtchen zu sammeln.",
+    text: "FleißTakt hilft Musiklernenden dabei, Übezeit festzuhalten und Kärtchen zu sammeln.",
         url: APP_SHARE_URL,
       };
 
@@ -3619,7 +3802,9 @@ function bindEvents() {
     profileForm.addEventListener("submit", (event) => {
       event.preventDefault();
       state.profileName = document.querySelector("#profile-name")?.value?.trim() || "Mila";
-      state.instrument = document.querySelector("#profile-instrument")?.value || instruments[0];
+      if (!state.syncUploadToken) {
+        state.instrument = document.querySelector("#profile-instrument")?.value || instruments[0];
+      }
       state.goal = Number(document.querySelector("#profile-goal")?.value) || 15;
       persistState();
       state.celebrationText = "Profil aktualisiert.";
@@ -3646,31 +3831,26 @@ function bindEvents() {
     studentSyncInProgress = true;
     openSyncStatus("Mit Server synchronisieren", [
       { id: "upload", label: "Aktuellen Bericht zum Server senden" },
-      { id: "download", label: "Profil und Ziel-Kärtchen vom Server laden" },
+      { id: "download", label: "Profil und Kärtchen vom Server laden" },
     ]);
 
     try {
       updateSyncStatus("upload", "running", "Bericht wird an den FleißTakt-Server gesendet...");
       const { uploadResult, snapshot } = await syncStudentAppWithServer();
-      updateSyncStatus("upload", "done", "Bericht gespeichert. Jetzt werden Profil und Ziel-Kärtchen geladen...");
+      updateSyncStatus("upload", "done", "Bericht gespeichert. Jetzt werden Profil und Kärtchen geladen...");
       updateSyncStatus("download", "running", "Aktueller Serverstand wird auf das Gerät übernommen...");
-      updateSyncStatus("download", "done", snapshot?.lastImportSummary || "Profil und Ziel-Kärtchen wurden aktualisiert.");
+      updateSyncStatus("download", "done", snapshot?.lastImportSummary || "Profil und Kärtchen wurden aktualisiert.");
       finishSyncStatus(
         "success",
         uploadResult?.status === "duplicate_ignored"
           ? (snapshot?.lastImportSummary || "Server-Sync abgeschlossen.")
-          : "Bericht gesendet und Ziel-Kärtchen synchronisiert.",
+          : "Bericht gesendet und Kärtchen synchronisiert.",
         true,
       );
       state.celebrationText = uploadResult?.status === "duplicate_ignored"
         ? (snapshot?.lastImportSummary || "Server-Sync abgeschlossen.")
-        : "Bericht gesendet und Ziel-Kärtchen synchronisiert.";
-      state.syncStatusNote = `Zuletzt mit dem Server synchronisiert: ${new Date().toLocaleString("de-DE", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })}.`;
+        : "Bericht gesendet und Kärtchen synchronisiert.";
+      setStudentSyncState("ok", "Bericht gesendet und aktueller Serverstand übernommen.", { markSuccess: true });
     } catch (error) {
       const runningStep = state.syncStatusSteps.find((step) => step.state === "running");
       if (runningStep) {
@@ -3686,7 +3866,7 @@ function bindEvents() {
         state.celebrationText = "Synchronisation mit dem Server gerade nicht möglich.";
         finishSyncStatus("error", "Synchronisation mit dem Server gerade nicht möglich.");
       }
-      state.syncStatusNote = "Manueller Server-Sync fehlgeschlagen. Bitte später erneut versuchen.";
+      setStudentSyncState("error", "Manueller Server-Sync fehlgeschlagen. Bitte später erneut versuchen.");
     }
 
     state.celebrate = true;
@@ -4169,7 +4349,7 @@ function composeHtmlReport({ printOnLoad = false } = {}) {
       </section>
 
       <section class="section">
-        <h2>Freigeschaltete Fleiß-Kärtchen</h2>
+        <h2>Freigeschaltete Kärtchen</h2>
         <ul class="cards">${cardsMarkup}</ul>
       </section>
 

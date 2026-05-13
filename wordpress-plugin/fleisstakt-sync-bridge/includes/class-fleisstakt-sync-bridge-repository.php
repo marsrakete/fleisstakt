@@ -553,7 +553,19 @@ class FleissTakt_Sync_Bridge_Repository {
   }
 
   public function list_classes(): array {
-    return $this->wpdb->get_results("SELECT * FROM {$this->classes_table} ORDER BY class_name ASC", ARRAY_A);
+    return $this->wpdb->get_results(
+      "SELECT c.*,
+              COUNT(DISTINCT p.id) AS profile_count,
+              COUNT(DISTINCT p.student_id) AS student_count,
+              GROUP_CONCAT(DISTINCT t.display_name ORDER BY t.display_name SEPARATOR ', ') AS teacher_names
+       FROM {$this->classes_table} c
+       LEFT JOIN {$this->profiles_table} p ON p.class_id = c.id
+       LEFT JOIN {$this->assignments_table} a ON a.student_profile_id = p.id
+       LEFT JOIN {$this->teachers_table} t ON t.id = a.teacher_id
+       GROUP BY c.id
+       ORDER BY c.class_name ASC",
+      ARRAY_A
+    );
   }
 
   public function create_student(array $data): void {
@@ -741,10 +753,15 @@ class FleissTakt_Sync_Bridge_Repository {
 
   public function list_profiles(): array {
     return $this->wpdb->get_results(
-      "SELECT p.*, s.display_name AS student_display_name, s.student_uuid, c.class_name
+      "SELECT p.*, s.display_name AS student_display_name, s.student_uuid, c.class_name,
+              COUNT(DISTINCT a.id) AS assignment_count,
+              GROUP_CONCAT(DISTINCT t.display_name ORDER BY t.display_name SEPARATOR ', ') AS teacher_names
        FROM {$this->profiles_table} p
        INNER JOIN {$this->students_table} s ON s.id = p.student_id
        LEFT JOIN {$this->classes_table} c ON c.id = p.class_id
+       LEFT JOIN {$this->assignments_table} a ON a.student_profile_id = p.id
+       LEFT JOIN {$this->teachers_table} t ON t.id = a.teacher_id
+       GROUP BY p.id
        ORDER BY s.display_name ASC, p.instrument ASC",
       ARRAY_A
     );
@@ -912,6 +929,23 @@ class FleissTakt_Sync_Bridge_Repository {
          ORDER BY a.awarded_at DESC, a.id DESC",
         $teacher_id
       ),
+      ARRAY_A
+    );
+  }
+
+  public function list_card_awards(): array {
+    return $this->wpdb->get_results(
+      "SELECT a.*, c.card_uuid, c.title, c.description, c.accent, c.symbol, c.rarity,
+              t.display_name AS teacher_name,
+              p.profile_uuid, p.app_student_id, p.profile_label, p.instrument,
+              s.display_name AS student_display_name, s.first_name, s.last_name
+       FROM {$this->card_awards_table} a
+       INNER JOIN {$this->cards_table} c ON c.id = a.card_id
+       LEFT JOIN {$this->teachers_table} t ON t.id = a.teacher_id
+       INNER JOIN {$this->profiles_table} p ON p.id = a.student_profile_id
+       INNER JOIN {$this->students_table} s ON s.id = p.student_id
+       WHERE a.status = 'active'
+       ORDER BY a.awarded_at DESC, a.id DESC",
       ARRAY_A
     );
   }
@@ -1810,15 +1844,42 @@ class FleissTakt_Sync_Bridge_Repository {
     return $overview;
   }
 
-  public function list_reports(): array {
-    return $this->wpdb->get_results(
-      "SELECT r.*, p.profile_label, p.instrument, s.display_name AS student_display_name
+  public function list_reports(array $filters = []): array {
+    $where = [];
+    $params = [];
+
+    if (!empty($filters['student_id'])) {
+      $where[] = 's.id = %d';
+      $params[] = (int) $filters['student_id'];
+    }
+
+    if (!empty($filters['profile_id'])) {
+      $where[] = 'p.id = %d';
+      $params[] = (int) $filters['profile_id'];
+    }
+
+    if (!empty($filters['class_id'])) {
+      $where[] = 'p.class_id = %d';
+      $params[] = (int) $filters['class_id'];
+    }
+
+    $sql = "SELECT r.*, p.profile_label, p.instrument, p.class_id, c.class_name, s.id AS student_id, s.display_name AS student_display_name
        FROM {$this->reports_table} r
        INNER JOIN {$this->profiles_table} p ON p.id = r.student_profile_id
        INNER JOIN {$this->students_table} s ON s.id = p.student_id
-       ORDER BY r.received_at DESC",
-      ARRAY_A
-    );
+       LEFT JOIN {$this->classes_table} c ON c.id = p.class_id";
+
+    if ($where) {
+      $sql .= ' WHERE ' . implode(' AND ', $where);
+    }
+
+    $sql .= ' ORDER BY r.received_at DESC';
+
+    if ($params) {
+      $sql = $this->wpdb->prepare($sql, ...$params);
+    }
+
+    return $this->wpdb->get_results($sql, ARRAY_A);
   }
 
   public function delete_report(int $id): void {
@@ -1953,6 +2014,7 @@ class FleissTakt_Sync_Bridge_Repository {
     $teacher_awards = $this->list_card_awards_for_teacher($teacher_id);
     $profile_ids = array_map(static fn(array $profile): int => (int) $profile['id'], $profiles);
     $latest_reports_by_profile = $this->get_latest_reports_for_profiles($profile_ids);
+    $recent_reports_by_profile = $this->get_recent_reports_for_profiles($profile_ids, 5);
     $report_counts_by_profile = $this->get_report_counts_for_profiles($profile_ids);
     $awards_by_profile = [];
 
@@ -1973,6 +2035,7 @@ class FleissTakt_Sync_Bridge_Repository {
       $profile = $this->ensure_profile_connect_code($profile);
       $profile_id = (int) $profile['id'];
       $latest_report = $latest_reports_by_profile[$profile_id] ?? null;
+      $recent_reports = $recent_reports_by_profile[$profile_id] ?? [];
       $reports_received = (int) ($report_counts_by_profile[$profile_id] ?? 0);
       $decoded = $latest_report ? json_decode((string) $latest_report['payload_json'], true) : [];
       $entries = is_array($decoded['report']['entries'] ?? null) ? $decoded['report']['entries'] : [];
@@ -2015,6 +2078,21 @@ class FleissTakt_Sync_Bridge_Repository {
         'latestReportStreak' => (int) ($latest_report['report_streak'] ?? 0),
         'unlockedCards' => $unlocked_cards,
         'awardedCards' => $awarded_cards,
+        'recentReports' => array_values(array_map(function (array $report): array {
+          $decoded_report = json_decode((string) ($report['payload_json'] ?? ''), true);
+          return [
+            'reportUuid' => $report['report_uuid'] ?? '',
+            'label' => $report['report_label'] ?? '',
+            'range' => $report['report_range'] ?? 'week',
+            'minutes' => (int) ($report['report_minutes'] ?? 0),
+            'streak' => (int) ($report['report_streak'] ?? 0),
+            'uniqueDaysCount' => (int) ($decoded_report['report']['uniqueDaysCount'] ?? 0),
+            'notedCount' => (int) ($decoded_report['report']['notedCount'] ?? 0),
+            'entriesCount' => (int) ($report['entries_count'] ?? 0),
+            'exportedAt' => !empty($report['exported_at']) ? gmdate('c', strtotime((string) $report['exported_at'])) : '',
+            'receivedAt' => !empty($report['received_at']) ? gmdate('c', strtotime((string) $report['received_at'])) : '',
+          ];
+        }, $recent_reports)),
         'reportsReceived' => $reports_received,
         'lastImportedAt' => !empty($latest_report['exported_at']) ? gmdate('c', strtotime((string) $latest_report['exported_at'])) : '',
       ];
@@ -2134,6 +2212,46 @@ class FleissTakt_Sync_Bridge_Repository {
     }
 
     return $counts;
+  }
+
+  private function get_recent_reports_for_profiles(array $profile_ids, int $limit = 5): array {
+    $profile_ids = array_values(array_filter(array_map('intval', $profile_ids)));
+    if (!$profile_ids) {
+      return [];
+    }
+
+    $limit = max(1, $limit);
+    $placeholders = implode(',', array_fill(0, count($profile_ids), '%d'));
+    $rows = $this->wpdb->get_results(
+      $this->wpdb->prepare(
+        "SELECT *
+         FROM {$this->reports_table}
+         WHERE student_profile_id IN ($placeholders)
+         ORDER BY student_profile_id ASC, exported_at DESC, received_at DESC, id DESC",
+        ...$profile_ids
+      ),
+      ARRAY_A
+    );
+
+    $reports = [];
+    foreach ($rows as $row) {
+      $profile_id = (int) ($row['student_profile_id'] ?? 0);
+      if (!$profile_id) {
+        continue;
+      }
+
+      if (!isset($reports[$profile_id])) {
+        $reports[$profile_id] = [];
+      }
+
+      if (count($reports[$profile_id]) >= $limit) {
+        continue;
+      }
+
+      $reports[$profile_id][] = $row;
+    }
+
+    return $reports;
   }
 
   private function list_manual_awards_for_profile(int $profile_id): array {
