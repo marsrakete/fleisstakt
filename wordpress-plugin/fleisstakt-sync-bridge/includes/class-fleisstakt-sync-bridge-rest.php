@@ -74,6 +74,13 @@ class FleissTakt_Sync_Bridge_Rest {
     ]);
   }
 
+  private function with_no_cache_headers(WP_REST_Response $response): WP_REST_Response {
+    $response->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    $response->header('Pragma', 'no-cache');
+    $response->header('Expires', '0');
+    return $response;
+  }
+
   public function receive_report(WP_REST_Request $request): WP_REST_Response {
     $content_type = (string) $request->get_header('content-type');
     if (stripos($content_type, 'application/json') === false) {
@@ -152,10 +159,10 @@ class FleissTakt_Sync_Bridge_Rest {
       ], 403);
     }
 
-    return new WP_REST_Response([
+    return $this->with_no_cache_headers(new WP_REST_Response([
       'ok' => true,
       'snapshot' => $this->repository->get_student_sync_snapshot($profile),
-    ], 200);
+    ], 200));
   }
 
   public function connect_profile(WP_REST_Request $request): WP_REST_Response {
@@ -192,10 +199,10 @@ class FleissTakt_Sync_Bridge_Rest {
       ], 403);
     }
 
-    return new WP_REST_Response([
+    return $this->with_no_cache_headers(new WP_REST_Response([
       'ok' => true,
       'snapshot' => $this->repository->get_student_sync_snapshot($profile),
-    ], 200);
+    ], 200));
   }
 
   public function teacher_sync(WP_REST_Request $request): WP_REST_Response {
@@ -215,10 +222,10 @@ class FleissTakt_Sync_Bridge_Rest {
       ], 403);
     }
 
-    return new WP_REST_Response([
+    return $this->with_no_cache_headers(new WP_REST_Response([
       'ok' => true,
       'snapshot' => $this->repository->get_teacher_sync_snapshot($teacher),
-    ], 200);
+    ], 200));
   }
 
   public function submit_feedback_response(WP_REST_Request $request): WP_REST_Response {

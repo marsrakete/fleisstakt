@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>FleißTakt README</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; line-height: 1.45; color: #1f2937; margin: 40px; }
+  h1,h2,h3 { color: #0f172a; page-break-after: avoid; }
+  pre, code { font-family: Cascadia Code, Consolas, monospace; }
+  pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; white-space: pre-wrap; }
+  code { background: #f6f8fa; padding: 2px 4px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; vertical-align: top; }
+  blockquote { border-left: 4px solid #d1d5db; margin: 16px 0; padding-left: 12px; color: #4b5563; }
+  img { max-width: 100%; }
+  ul, ol { padding-left: 24px; }
+  hr { border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+  @page { size: A4; margin: 18mm 14mm 18mm 14mm; }
+</style>
+</head>
+<body>
+<h1 id="fleitakt">FleißTakt</h1>
+<p>FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App hilft dabei, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden. Dazu kommen eine eigene Lehrkräfte-App und ein WordPress-Plugin als gemeinsame Zentrale.</p>
+<h2 id="projektinfos">Projektinfos</h2>
+<ul>
+<li>App für Lernende: <a href="https://marsrakete.github.io/fleisstakt/">https://marsrakete.github.io/fleisstakt/</a></li>
+<li>Lehrkräfte-App: <a href="https://marsrakete.github.io/fleisstakt/teacher.html">https://marsrakete.github.io/fleisstakt/teacher.html</a></li>
+<li>Repository: <a href="https://github.com/marsrakete/fleisstakt">https://github.com/marsrakete/fleisstakt</a></li>
+<li>Kontakt: <a href="mailto:millux@marsrakete.de">millux@marsrakete.de</a></li>
+</ul>
+<h2 id="idee">Idee</h2>
+<p>Musiklernende tragen nach dem Üben kurz ein:</p>
+<ul>
+<li>wie lange sie geübt haben</li>
+<li>an welchem Bereich sie gearbeitet haben</li>
+<li>optional eine kleine Notiz</li>
+</ul>
+<p>Dafür bekommen sie Rückmeldung in Form von Fortschritt, Serien und Kärtchen-Zielen. Die App soll nicht kontrollierend wirken, sondern motivieren und das Gespräch über Üben erleichtern.</p>
+<h2 id="warum-wordpress-als-zentrale">Warum WordPress als Zentrale?</h2>
+<p>FleißTakt nutzt inzwischen ein eigenes WordPress-Plugin als Server-Zentrale. Das hat einen sehr praktischen Grund: WordPress ist weit verbreitet, auf vielen bestehenden Websites schon vorhanden und für viele Musikschulen, Lehrkräfte oder Träger technisch leichter zugänglich als ein komplett eigener Backend-Stack.</p>
+<p>Vorteile dieser Entscheidung:</p>
+<ul>
+<li>große Verbreitung und bekannte Hosting-Umgebung</li>
+<li>einfacher Plugin-Upload auf bestehende WordPress-Installationen</li>
+<li>zentrale Datenhaltung für Lehrkräfte, Lernende, Unterrichte, Berichte und Kärtchen</li>
+<li>Web-Administration ohne eigene Server-Oberfläche außerhalb von WordPress</li>
+<li>gute Basis für späteren Ausbau über mehrere Geräte und mehrere Lehrkräfte hinweg</li>
+</ul>
+<p>WordPress ist hier also nicht das Produkt selbst, sondern die robuste und niedrigschwellige Infrastruktur darunter.</p>
+<h2 id="wie-die-kommunikation-jetzt-funktioniert">Wie die Kommunikation jetzt funktioniert</h2>
+<p>FleißTakt läuft im Alltag über den Server-Sync mit dem WordPress-Plugin.</p>
+<pre class="mermaid">flowchart LR
+    A["Lernenden-App"] -->|Berichte und Profil-Sync| B["WordPress-Plugin"]
+C["Lehrkräfte-App"] -->|Klassen, Lernende, Unterrichte, Kärtchen| B
+    B -->|Profil, Ziele, Zuordnungen| A
+    B -->|Übersichten und Berichte| C
+</pre>
+<p>Im laufenden Betrieb bedeutet das:</p>
+<ul>
+<li>Lernende synchronisieren ihre Einträge mit dem Server.</li>
+<li>Die Lernenden-App lädt Profil, Kärtchen und Server-Stand wieder nach.</li>
+<li>Lehrkräfte synchronisieren Klassen, Lernende, Unterrichte und Kärtchen mit demselben Server.</li>
+<li>Das WordPress-Plugin ist die gemeinsame Wahrheit für Unterrichtsbeziehungen und Zuweisungen.</li>
+</ul>
+<h2 id="mandantenfahigkeit">Mandantenfähigkeit</h2>
+<p>Sobald mehrere Lehrkräfte mit derselben Installation arbeiten, muss klar getrennt bleiben, wer welche Daten sehen und bearbeiten darf. Genau das meint hier Mandantenfähigkeit.</p>
+<p>Warum das wichtig ist:</p>
+<ul>
+<li>eine Lehrkraft soll nur die eigenen Unterrichtsbeziehungen sehen</li>
+<li>mehrere Lehrkräfte können denselben WordPress-Server nutzen</li>
+<li>Lernende können mehreren Lehrkräften zugeordnet sein, zum Beispiel für verschiedene Instrumente</li>
+<li>Kärtchen, Berichte und Unterrichte müssen pro Lernweg sauber getrennt bleiben</li>
+</ul>
+<p>Das Plugin kann als Admin-Werkzeug alles sehen und pflegen. Im normalen Lehrkräfte-Alltag sorgt die Mandantenlogik aber dafür, dass die Lehrkräfte-App nur die passenden Daten lädt.</p>
+<h2 id="unterrichte-statt-nur-eine-person">Unterrichte statt nur eine Person</h2>
+<p>In der Oberfläche sprechen wir bewusst von <code>Unterrichten</code>, weil das für Lehrkräfte und Lernende verständlicher ist. Technisch dürfen diese Objekte intern weiterhin <code>Profile</code> heißen.</p>
+<p>In FleißTakt ist eine lernende Person nicht automatisch nur ein einziger Unterricht. Stattdessen trennt das System zwischen Person und mehreren konkreten Unterrichtsbeziehungen.</p>
+<pre class="mermaid">flowchart LR
+    L["Lernende Person&lt;br/>Mila Beispiel"]
+
+    L --> U1["Unterricht 1&lt;br/>Instrument X bei Lehrkraft A"]
+    L --> U2["Unterricht 2&lt;br/>Instrument X bei Lehrkraft B"]
+    L --> U3["Unterricht 3&lt;br/>Instrument Y bei Lehrkraft A"]
+
+    U1 --> K1["Klasse H"]
+    U2 --> K2["Klasse I"]
+    U3 --> K1
+
+    U1 --> T1["Lehrkraft A"]
+    U2 --> T2["Lehrkraft B"]
+    U3 --> T1
+
+    U1 --> D1["eigene Ziele&lt;br/>eigene Kärtchen&lt;br/>eigene Berichte"]
+    U2 --> D2["eigene Ziele&lt;br/>eigene Kärtchen&lt;br/>eigene Berichte"]
+    U3 --> D3["eigene Ziele&lt;br/>eigene Kärtchen&lt;br/>eigene Berichte"]
+
+    A1["Lernenden-App"] --> U1
+    A1 --> U2
+    A1 --> U3
+
+    A2["Lehrkräfte-App"] --> U1
+    A2 --> U2
+    A2 --> U3
+
+    WP["WordPress-Plugin&lt;br/>Zentrale Serverstelle"] --> U1
+    WP --> U2
+    WP --> U3
+</pre>
+<p>Kurz gesagt:</p>
+<ul>
+<li>Die <code>lernende Person</code> ist der Mensch selbst.</li>
+<li>Der <code>Unterricht</code> ist der konkrete Lernweg.</li>
+<li>Lehrkraft, Klasse, Ziele, Kärtchen, Berichte und Sync hängen am Unterricht, nicht direkt an der Person.</li>
+</ul>
+<h3 id="technische-sicht">Technische Sicht</h3>
+<pre class="mermaid">flowchart TB
+    ST["Student&lt;br/>Personenstammdaten"] --> PR1["Profile&lt;br/>Unterricht A"]
+    ST --> PR2["Profile&lt;br/>Unterricht B"]
+
+    TE1["Teacher"] --> AS1["Assignment"]
+    TE2["Teacher"] --> AS2["Assignment"]
+    AS1 --> PR1
+    AS2 --> PR2
+
+    CL1["Class"] --> PR1
+    CL2["Class"] --> PR2
+
+    PR1 --> RE1["Reports"]
+    PR1 --> CA1["Card Assignments"]
+    PR1 --> FB1["Feedback Ballot"]
+
+    PR2 --> RE2["Reports"]
+    PR2 --> CA2["Card Assignments"]
+    PR2 --> FB2["Feedback Ballot"]
+
+    FR1["Feedback Round&lt;br/>für Lehrkraft A"] --> FB1
+    FR2["Feedback Round&lt;br/>für Lehrkraft B"] --> FB2
+
+    FB1 --> FA1["Feedback Answers&lt;br/>anonym gespeichert"]
+    FB2 --> FA2["Feedback Answers&lt;br/>anonym gespeichert"]
+</pre>
+<p>Diese technische Sicht hilft bei drei wichtigen Regeln:</p>
+<ul>
+<li><code>Assignments</code> verbinden Lehrkraft und Profil.</li>
+<li><code>Reports</code>, <code>Kärtchen</code> und <code>Feedback-Berechtigung</code> laufen profilbezogen.</li>
+<li>Die eigentlichen <code>Feedback Answers</code> werden getrennt von der Personen-Zuordnung gespeichert, damit die Auswertung anonym bleibt.</li>
+</ul>
+<p>Eine lernende Person ist der Mensch selbst:</p>
+<ul>
+<li>Vorname</li>
+<li>Nachname</li>
+<li>E-Mail</li>
+<li>Messenger-ID</li>
+<li>optionale externe ID</li>
+</ul>
+<p>Ein Unterricht ist die konkrete Unterrichtsbeziehung:</p>
+<ul>
+<li>Instrument</li>
+<li>Unterrichtsbezeichnung</li>
+<li>Tagesziel</li>
+<li>zugeordnete Lehrkraft</li>
+<li>optionale Klasse</li>
+<li>Server-ID und Verbindungscode</li>
+<li>eigene Berichte und eigene Kärtchen-Ziele</li>
+</ul>
+<p>Das ist wichtig, weil ein Lernender zum Beispiel gleichzeitig haben kann:</p>
+<ul>
+<li>Klavier bei Lehrkraft A</li>
+<li>Violine bei Lehrkraft B</li>
+<li>Gesang bei Lehrkraft C</li>
+</ul>
+<p>Dann sind das drei getrennte Unterrichte mit jeweils eigenem Kontext, eigener Synchronisation und eigenen Zielen.</p>
+<h2 id="kartchen-und-ziele">Kärtchen und Ziele</h2>
+<p>FleißTakt kennt weiterhin motivierende Kärtchen. Diese können inzwischen nicht nur global existieren, sondern durch Lehrkräfte gezielt gepflegt und zugewiesen werden.</p>
+<p>Dabei gilt:</p>
+<ul>
+<li>Kärtchen können in der Lehrkräfte-App erstellt werden</li>
+<li>Kärtchen werden über das WordPress-Plugin zentral gespeichert</li>
+<li>Zuweisungen können für alle, für eine Klasse oder individuell für einen einzelnen Unterricht gelten</li>
+<li>die Lernenden-App zeigt im verbundenen Modus nur die wirklich zugewiesenen Ziele</li>
+</ul>
+<p>So bleibt die Motivation persönlich und passend zum jeweiligen Unterricht.</p>
+<h2 id="onboarding-fur-lehrkrafte">Onboarding für Lehrkräfte</h2>
+<p>Der empfohlene Ablauf für Lehrkräfte ist jetzt:</p>
+<ol>
+<li>WordPress-Plugin installieren und aktivieren.</li>
+<li>Lehrkraft im Plugin anlegen oder mit bestehendem Kontext arbeiten.</li>
+<li>In der Lehrkräfte-App Klassen und Lernende anlegen.</li>
+<li>Für jede Unterrichtsbeziehung einen eigenen Unterricht anlegen.</li>
+<li>Lehrkräfte-App mit dem Server synchronisieren.</li>
+<li>Für jeden Unterricht <code>Lernenden-ID</code> und <code>Verbindungscode</code> anzeigen, kopieren oder teilen.</li>
+<li>Optional eigene Kärtchen anlegen und passenden Profilen oder Klassen zuweisen.</li>
+</ol>
+<p>Wichtig dabei:</p>
+<ul>
+<li>Eine Person kann mehrere Unterrichte haben.</li>
+<li>Die Verteilung an Lernende läuft über die Server-Verbindung.</li>
+<li>Die Lehrkräfte-App ist die tägliche Arbeitsoberfläche, das Plugin die zentrale Administration und Datenhaltung.</li>
+</ul>
+<h2 id="onboarding-fur-lernende">Onboarding für Lernende</h2>
+<p>Für Lernende ist der Einstieg jetzt deutlich einfacher:</p>
+<ol>
+<li>Lernenden-App öffnen oder als PWA installieren.</li>
+<li>In den Einstellungen <code>Mit Lehrkraft verbinden</code> öffnen.</li>
+<li><code>Lernenden-ID</code> und <code>Verbindungscode</code> eingeben.</li>
+<li>Unterricht vom Server laden.</li>
+<li>Danach normal üben, Einträge speichern und mit dem Server synchronisieren.</li>
+</ol>
+<p>Nach dieser ersten Kopplung kennt die App:</p>
+<ul>
+<li>Anzeigename</li>
+<li>Instrument</li>
+<li>Unterrichtsbezeichnung</li>
+<li>Tagesziel</li>
+<li>Server-Zuordnung</li>
+<li>zugewiesene Kärtchen</li>
+</ul>
+<p>Danach genügt im Alltag der normale Server-Sync.</p>
+<h2 id="was-die-lernenden-app-im-alltag-tut">Was die Lernenden-App im Alltag tut</h2>
+<p>Lernende:</p>
+<ul>
+<li>tragen Übezeit, Schwerpunkt und optional eine Notiz ein</li>
+<li>sehen Fortschritt, Serie und zugewiesene Kärtchen</li>
+<li>synchronisieren ihre Daten mit dem WordPress-Server</li>
+<li>können mehrere Unterrichte auf einem Gerät verwalten und umschalten</li>
+</ul>
+<p>Im verbundenen Modus ist der Unterricht führend. Das bedeutet:</p>
+<ul>
+<li>Instrument und Profilkontext kommen vom Server</li>
+<li>nur zugewiesene Ziele werden angezeigt</li>
+<li>die Synchronisation läuft profilbezogen</li>
+</ul>
+<h2 id="was-die-lehrkrafte-app-im-alltag-tut">Was die Lehrkräfte-App im Alltag tut</h2>
+<p>Die Lehrkräfte-App ist die Arbeitsoberfläche für Unterricht und Verwaltung. Dort können Lehrkräfte:</p>
+<ul>
+<li>Klassen pflegen</li>
+<li>Lernende anlegen</li>
+<li>mehrere Unterrichte pro lernender Person verwalten</li>
+<li>Kärtchen-Ziele erstellen</li>
+<li>Kärtchen Klassen oder einzelnen Unterrichten zuweisen</li>
+<li>Daten mit dem WordPress-Server synchronisieren</li>
+<li>Berichte und letzte Einträge als Gesprächsgrundlage nutzen</li>
+</ul>
+<p>Die Lehrkräfte-App ist bewusst als eigene PWA getrennt von der Lernenden-App gedacht.</p>
+<h2 id="berichtswesen">Berichtswesen</h2>
+<p>FleißTakt bietet weiterhin Berichte für Woche, Monat und Gesamtzeitraum. Diese Berichte können in der App angesehen, geteilt, kopiert oder heruntergeladen werden.</p>
+<p>Im neuen Zielbild gilt aber:</p>
+<ul>
+<li>Für die tägliche Zusammenarbeit ist der Server-Sync der Hauptweg.</li>
+<li>Die Lehrkräfte-App bekommt ihre Sicht primär über die WordPress-Zentrale.</li>
+</ul>
+<h2 id="ziel-im-unterricht">Ziel im Unterricht</h2>
+<p>FleißTakt soll das Gespräch über Üben verbessern:</p>
+<ul>
+<li>weg von reiner Kontrolle</li>
+<li>hin zu sichtbarem Fortschritt</li>
+<li>hin zu mehr Eigenverantwortung der Lernenden</li>
+<li>hin zu kleinen, motivierenden Erfolgserlebnissen</li>
+</ul>
+<h2 id="ausbaustufen">Ausbaustufen</h2>
+<p>FleißTakt kann schrittweise wachsen, ohne den einfachen Kern der App zu verlieren.</p>
+<h3 id="stufe-1-solider-alltag">Stufe 1: Solider Alltag</h3>
+<ul>
+<li>Einträge bearbeiten und löschen</li>
+<li>Kalenderansicht zusätzlich zur Listenansicht</li>
+<li>bessere Routine-Logik für Ferien, Pausentage oder Unterrichtsausfälle</li>
+<li>stabiler Sync zwischen Lernenden-App, Lehrkräfte-App und WordPress</li>
+</ul>
+<h3 id="stufe-2-mehr-motivation">Stufe 2: Mehr Motivation</h3>
+<ul>
+<li>weitere Kärtchen-Ziele mit kleinen Themenwelten</li>
+<li>Sammelalbum mit Reihen, Seltenheit und sichtbarem Fortschritt</li>
+<li>kleine Feiermomente beim Freischalten</li>
+<li>Wochenziele und Monatsziele</li>
+</ul>
+<h3 id="stufe-3-mehr-begleitung-durch-lehrkrafte">Stufe 3: Mehr Begleitung durch Lehrkräfte</h3>
+<ul>
+<li>kommentierbare Rückblicke zu Woche oder Monat</li>
+<li>Fokus-Themen für die nächste Übephase</li>
+<li>Zielvereinbarungen zwischen Lernenden und Lehrkräften</li>
+<li>kurze Notizen für die nächste Unterrichtsstunde</li>
+</ul>
+<h3 id="stufe-4-mehr-vernetzung">Stufe 4: Mehr Vernetzung</h3>
+<ul>
+<li>mehrere Geräte pro Profil</li>
+<li>feinere Rechte und Rollen</li>
+<li>weitere Mandanten- und Organisationslogik für Musikschulen</li>
+<li>stärkere Einbindung von WordPress als zentrale Unterrichtsplattform</li>
+</ul>
+
+</body>
+</html>

@@ -7,6 +7,7 @@ FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App hilft d
 - App für Lernende: [https://marsrakete.github.io/fleisstakt/](https://marsrakete.github.io/fleisstakt/)
 - Lehrkräfte-App: [https://marsrakete.github.io/fleisstakt/teacher.html](https://marsrakete.github.io/fleisstakt/teacher.html)
 - Repository: [https://github.com/marsrakete/fleisstakt](https://github.com/marsrakete/fleisstakt)
+- Produktlizenz: Apache-2.0, siehe [LICENSE.md](C:/Users/millenseer/OneDrive%20-%20conet.de/Projekte/FleissTakt/LICENSE.md)
 - Kontakt: [millux@marsrakete.de](mailto:millux@marsrakete.de)
 
 ## Idee
@@ -51,6 +52,29 @@ Im laufenden Betrieb bedeutet das:
 - Die Lernenden-App lädt Profil, Kärtchen und Server-Stand wieder nach.
 - Lehrkräfte synchronisieren Klassen, Lernende, Unterrichte und Kärtchen mit demselben Server.
 - Das WordPress-Plugin ist die gemeinsame Wahrheit für Unterrichtsbeziehungen und Zuweisungen.
+
+## QR-Erkennung in der Lernenden-App
+
+Für die Kopplung per QR-Code nutzt FleißTakt in der Lernenden-App zwei Wege:
+
+- wenn verfügbar die Browser-Schnittstelle `BarcodeDetector`
+- als Fallback die Bibliothek `jsQR`
+
+`jsQR` wird lokal mit dem Projekt ausgeliefert, damit Kamera-Scan und QR-Bild-Import auch auf Geräten funktionieren, deren Browser `BarcodeDetector` nicht oder nicht zuverlässig anbietet.
+
+Verwendete Quelle:
+
+- Repository: [cozmo/jsQR](https://github.com/cozmo/jsQR)
+- Lizenz: [Apache-2.0](https://github.com/cozmo/jsQR/blob/master/LICENSE)
+- Drittanbieter-Hinweise: [THIRD-PARTY-NOTICES.md](C:/Users/millenseer/OneDrive%20-%20conet.de/Projekte/FleissTakt/THIRD-PARTY-NOTICES.md)
+
+Für FleißTakt ist das lizenzseitig stimmig: `jsQR` steht ebenfalls unter Apache-2.0 und passt damit sauber zur Projektlizenz.
+
+Wichtig ist nur:
+
+- die Lizenz- und Copyright-Hinweise von `jsQR` müssen erhalten bleiben
+- bei einer Weitergabe des Produkts sollte die verwendete Drittbibliothek sauber dokumentiert sein
+- die Apache-2.0-Lizenz ist keine Copyleft-Lizenz
 
 ## Mandantenfähigkeit
 

@@ -36,6 +36,106 @@ const teacherWorkspaces = [
   { id: "feedback", label: "Feedback", icon: "◌" },
 ];
 const teacherInstrumentOptions = ["Klavier", "Violine", "Gitarre", "Cello", "Gesang", "Flöte"];
+const teacherHelpTopics = {
+  overview: {
+    eyebrow: "Hilfe",
+    title: "Workspace Übersicht",
+    text: "Hier startet die Lehrkräfte-App mit Kennzahlen, letzten Berichten und einem ruhigen Überblick über den aktuellen Stand.",
+    bullets: [
+      "zeigt Lernende, Klassen, Einträge und Kärtchen auf einen Blick",
+      "bündelt die letzten Berichte an einer Stelle",
+      "hilft beim täglichen Einstieg",
+    ],
+  },
+  week: {
+    eyebrow: "Hilfe",
+    title: "Workspace Woche",
+    text: "Die Wochenansicht ist die Arbeitsansicht für den Alltag. Hier siehst du Aktivität, letzte Rückmeldungen und offene Unterrichte.",
+    bullets: [
+      "filtert nach Klasse",
+      "markiert aktive und offene Unterrichte",
+      "öffnet bei Klick auf einen Lernenden rechts die Berichte dieser Woche",
+    ],
+  },
+  classes: {
+    eyebrow: "Hilfe",
+    title: "Workspace Klassen",
+    text: "Hier verwaltest du Klassen selbst: anlegen, Unterrichte zuordnen, aus Klassen entfernen oder eine Klasse wieder löschen.",
+    bullets: [
+      "zeigt alle Klassen und ihre Zuordnungen",
+      "ordnet Unterrichte direkt einer Klasse zu",
+      "löscht Klassen mit Sicherheitsabfrage",
+    ],
+  },
+  students: {
+    eyebrow: "Hilfe",
+    title: "Workspace Lernende",
+    text: "Hier pflegst du die lernende Person und den jeweils aktiven Unterricht. Neue Unterrichte werden ebenfalls hier angelegt.",
+    bullets: [
+      "legt lernende Personen an",
+      "verwaltet mehrere Unterrichte pro Person",
+      "pflegt Klasse, Unterrichtsbezeichnung, Instrument und Tagesziel",
+    ],
+  },
+  cards: {
+    eyebrow: "Hilfe",
+    title: "Workspace Kärtchen",
+    text: "Hier entstehen Ziele und Belohnungen. Kärtchen können automatisch freigeschaltet oder direkt verliehen werden.",
+    bullets: [
+      "legt Kärtchen an und bearbeitet sie",
+      "weist Kärtchen allen, einer Klasse oder einem Unterricht zu",
+      "verleiht Kärtchen direkt mit optionaler Notiz",
+    ],
+  },
+  feedback: {
+    eyebrow: "Hilfe",
+    title: "Workspace Feedback",
+    text: "Hier siehst du anonyme Rückmeldungen aus dem Unterricht als gemeinsame Auswertung.",
+    bullets: [
+      "ordnet Antworten nach Feedback-Runden",
+      "zeigt Verteilungen pro Frage",
+      "bleibt bewusst ohne Personenbezug",
+    ],
+  },
+  class_assignment: {
+    eyebrow: "Hinweis",
+    title: "Unterricht einer Klasse zuordnen",
+    text: "Nicht die Person an sich gehört in eine Klasse, sondern der konkrete Unterricht. Deshalb werden Klassen immer an Unterrichte gebunden.",
+    bullets: [
+      "ein Lernender kann mehrere Unterrichte haben",
+      "jeder Unterricht kann in einer anderen Klasse liegen",
+    ],
+  },
+  student_form: {
+    eyebrow: "Hinweis",
+    title: "Stammdaten und aktueller Unterricht",
+    text: "Dieses Formular mischt bewusst Person und aktiven Unterricht. Klasse, Instrument und Tagesziel beziehen sich auf den aktuell ausgewählten Unterricht.",
+    bullets: [
+      "Anzeigename, Vorname, Nachname gehören zur Person",
+      "Klasse, Unterrichtsbezeichnung, Instrument und Tagesziel gehören zum Unterricht",
+    ],
+  },
+  coupling: {
+    eyebrow: "Hinweis",
+    title: "Kopplung für die Lernenden-App",
+    text: "Die Kopplung verbindet genau einen Unterricht mit einem Gerät. Danach läuft der Austausch über den Server.",
+    bullets: [
+      "zuerst Lernenden und Unterricht anlegen",
+      "dann Lernenden-App installieren",
+      "anschließend Lernenden und Unterricht mit dem Server synchronisieren",
+      "anschließend QR-Code oder Lernenden-ID und Verbindungscode weitergeben",
+    ],
+  },
+  card_rules: {
+    eyebrow: "Hinweis",
+    title: "Zielbedingung und Zielwert",
+    text: "Die Zielbedingung sagt, was geprüft wird. Der Zielwert sagt, ab welcher Zahl das Kärtchen automatisch freigeschaltet wird.",
+    bullets: [
+      "Beispiel: Wochenminuten + 60 bedeutet insgesamt 60 Minuten in einer Woche",
+      "Beispiel: Keine bedeutet nur direkte Vergabe ohne automatische Prüfung",
+    ],
+  },
+};
 
 const teacherState = {
   classes: [],
@@ -51,6 +151,10 @@ const teacherState = {
   currentWorkspace: "overview",
   sidebarCollapsed: false,
   classDraft: "",
+  studentFormDraft: null,
+  cardFormDraft: null,
+  practiceCategoriesDraft: "",
+  manualAwardDraft: null,
   statusLine: "Bereit.",
   statusLineUpdatedAt: 0,
   toast: "",
@@ -62,6 +166,15 @@ const teacherState = {
   installReady: false,
   settingsOpen: false,
   settingsFocusId: "",
+  helpDialogOpen: false,
+  helpTopic: "",
+  confirmDialogOpen: false,
+  confirmDialogTone: "default",
+  confirmDialogTitle: "",
+  confirmDialogMessage: "",
+  confirmDialogDetail: "",
+  confirmDialogConfirmLabel: "Bestätigen",
+  confirmDialogCancelLabel: "Abbrechen",
   updateStatus: "Die App funktioniert auch offline. Für eine Update-Prüfung bitte kurz online gehen.",
   updateState: "idle",
   updateReady: false,
@@ -97,6 +210,7 @@ let teacherAutoSyncPending = {
   roster: false,
   cards: false,
 };
+let pendingTeacherConfirmAction = null;
 
 hydrateTeacherState();
 applyTeacherModalScrollLock();
@@ -164,6 +278,10 @@ function defaultTeacherState() {
     currentWorkspace: "overview",
     sidebarCollapsed: false,
     classDraft: "",
+    studentFormDraft: null,
+    cardFormDraft: null,
+    practiceCategoriesDraft: "",
+    manualAwardDraft: null,
     statusLine: "Bereit.",
     statusLineUpdatedAt: 0,
     toast: "",
@@ -175,6 +293,15 @@ function defaultTeacherState() {
     installReady: false,
     settingsOpen: false,
     settingsFocusId: "",
+    helpDialogOpen: false,
+    helpTopic: "",
+    confirmDialogOpen: false,
+    confirmDialogTone: "default",
+    confirmDialogTitle: "",
+    confirmDialogMessage: "",
+    confirmDialogDetail: "",
+    confirmDialogConfirmLabel: "Bestätigen",
+    confirmDialogCancelLabel: "Abbrechen",
     updateStatus: "Die App funktioniert auch offline. Für eine Update-Prüfung bitte kurz online gehen.",
     updateState: "idle",
     updateReady: false,
@@ -207,7 +334,11 @@ function applyTeacherModalScrollLock() {
 }
 
 function isAnyTeacherModalOpen() {
-  return teacherState.settingsOpen || teacherState.profileShareOpen || teacherState.syncProgressOpen;
+  return teacherState.settingsOpen
+    || teacherState.profileShareOpen
+    || teacherState.syncProgressOpen
+    || teacherState.helpDialogOpen
+    || teacherState.confirmDialogOpen;
 }
 
 function normalizeVersionInfo(value = {}) {
@@ -267,6 +398,44 @@ function markTeacherUpdateReady() {
   renderTeacherApp();
 }
 
+function appendTeacherToast(message) {
+  const existing = `${teacherState.toast || ""}`.trim();
+  if (!existing) {
+    teacherState.toast = message;
+    return;
+  }
+  if (existing.includes(message)) {
+    teacherState.toast = existing;
+    return;
+  }
+  teacherState.toast = `${existing} ${message}`;
+}
+
+function openTeacherConfirmDialog(config = {}, onConfirm = null) {
+  teacherState.confirmDialogOpen = true;
+  teacherState.confirmDialogTone = config.tone === "danger" ? "danger" : "default";
+  teacherState.confirmDialogTitle = `${config.title || "Bitte bestätigen"}`.trim();
+  teacherState.confirmDialogMessage = `${config.message || ""}`.trim();
+  teacherState.confirmDialogDetail = `${config.detail || ""}`.trim();
+  teacherState.confirmDialogConfirmLabel = `${config.confirmLabel || "Bestätigen"}`.trim();
+  teacherState.confirmDialogCancelLabel = `${config.cancelLabel || "Abbrechen"}`.trim();
+  pendingTeacherConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
+  applyTeacherModalScrollLock();
+  renderTeacherApp();
+}
+
+function closeTeacherConfirmDialog() {
+  teacherState.confirmDialogOpen = false;
+  teacherState.confirmDialogTone = "default";
+  teacherState.confirmDialogTitle = "";
+  teacherState.confirmDialogMessage = "";
+  teacherState.confirmDialogDetail = "";
+  teacherState.confirmDialogConfirmLabel = "Bestätigen";
+  teacherState.confirmDialogCancelLabel = "Abbrechen";
+  pendingTeacherConfirmAction = null;
+  applyTeacherModalScrollLock();
+}
+
 function queueTeacherAutoSync({ roster = false, cards = false } = {}) {
   teacherAutoSyncPending = {
     roster: teacherAutoSyncPending.roster || roster,
@@ -283,6 +452,7 @@ function queueTeacherAutoSync({ roster = false, cards = false } = {}) {
 
   if (teacherAutoSyncInProgress) {
     teacherState.statusLine = "Änderungen gespeichert. Server-Sync läuft im Hintergrund weiter.";
+    appendTeacherToast("Server-Sync läuft im Hintergrund weiter.");
     setTeacherSyncState("running", "Weitere Änderungen werden an den laufenden Hintergrund-Sync angehängt.");
     persistTeacherState();
     renderTeacherApp();
@@ -299,6 +469,7 @@ async function runQueuedTeacherAutoSync() {
 
   teacherAutoSyncInProgress = true;
   teacherState.statusLine = "Änderungen gespeichert. Server-Sync läuft im Hintergrund.";
+  appendTeacherToast("Server-Sync läuft im Hintergrund.");
   setTeacherSyncState("running", "Änderungen werden im Hintergrund zum Server gesendet.");
   persistTeacherState();
   renderTeacherApp();
@@ -317,14 +488,21 @@ async function runQueuedTeacherAutoSync() {
       }
 
       const snapshot = await fetchTeacherSyncSnapshot();
-      const importResult = importTeacherSyncSnapshot(snapshot, { preserveLocalCardsOnEmpty: nextRun.cards });
+      const importResult = importTeacherSyncSnapshot(snapshot, {
+        preserveLocalCardsOnEmpty: nextRun.cards,
+        preserveLocalClassesOnEmpty: nextRun.roster,
+        preserveMissingLocalClasses: nextRun.roster,
+      });
       if (importResult.preservedLocalCards) {
         teacherState.toast = "Der Server hat direkt nach dem Kärtchen-Sync noch keine Karten zurückgemeldet. Die lokale Bibliothek bleibt deshalb vorerst erhalten.";
+      } else if (importResult.preservedLocalClasses || importResult.preservedMissingLocalClasses) {
+        teacherState.toast = "Der Server hat direkt nach dem Klassen-Sync noch nicht alle Klassen zurückgemeldet. Die lokale Liste bleibt deshalb vorerst erhalten.";
       }
     }
 
-    if (!teacherState.toast) {
+    if (!teacherState.toast || teacherState.toast.includes("Server-Sync läuft im Hintergrund")) {
       teacherState.statusLine = "Änderungen gespeichert und mit dem Server synchronisiert.";
+      teacherState.toast = "Änderungen wurden mit dem Server synchronisiert.";
     }
     setTeacherSyncState("ok", "Lokale Änderungen wurden automatisch zum Server gesendet und mit dem aktuellen Serverstand abgeglichen.", { markSynced: true });
   } catch (error) {
@@ -954,6 +1132,17 @@ function hydrateTeacherState() {
       ? parsed.currentWorkspace
       : "overview";
     teacherState.sidebarCollapsed = Boolean(parsed.sidebarCollapsed);
+    teacherState.classDraft = typeof parsed.classDraft === "string" ? parsed.classDraft : "";
+    teacherState.studentFormDraft = parsed.studentFormDraft && typeof parsed.studentFormDraft === "object"
+      ? parsed.studentFormDraft
+      : null;
+    teacherState.cardFormDraft = parsed.cardFormDraft && typeof parsed.cardFormDraft === "object"
+      ? parsed.cardFormDraft
+      : null;
+    teacherState.practiceCategoriesDraft = typeof parsed.practiceCategoriesDraft === "string" ? parsed.practiceCategoriesDraft : "";
+    teacherState.manualAwardDraft = parsed.manualAwardDraft && typeof parsed.manualAwardDraft === "object"
+      ? parsed.manualAwardDraft
+      : null;
     teacherState.statusLine = parsed.statusLine || "Bereit.";
     teacherState.statusLineUpdatedAt = Number(parsed.statusLineUpdatedAt) || 0;
     teacherState.lastImportSummary = parsed.lastImportSummary || "Noch keine Berichtspakete importiert.";
@@ -990,6 +1179,11 @@ function persistTeacherState() {
       selectedFeedbackRoundId: teacherState.selectedFeedbackRoundId,
       currentWorkspace: teacherState.currentWorkspace,
       sidebarCollapsed: teacherState.sidebarCollapsed,
+      classDraft: teacherState.classDraft,
+      studentFormDraft: teacherState.studentFormDraft,
+      cardFormDraft: teacherState.cardFormDraft,
+      practiceCategoriesDraft: teacherState.practiceCategoriesDraft,
+      manualAwardDraft: teacherState.manualAwardDraft,
       statusLine: teacherState.statusLine,
       statusLineUpdatedAt: teacherState.statusLineUpdatedAt,
       lastImportSummary: teacherState.lastImportSummary,
@@ -1089,6 +1283,112 @@ function renderStudentNameBlock(student, meta = "", note = "") {
       ${note ? `<small class="teacher-student-meta-note">${escapeHtml(note)}</small>` : ""}
     </div>
   `;
+}
+
+function renderTeacherIdentityLine() {
+  if (teacherState.syncTeacherLabel) {
+    return `<p class="teacher-identity-line"><strong>Angemeldet als</strong> ${escapeHtml(teacherState.syncTeacherLabel)}</p>`;
+  }
+
+  return `<p class="teacher-identity-line is-muted"><strong>Angemeldet als</strong> Noch keine Lehrkraft vom Server geladen</p>`;
+}
+
+function renderHelpTrigger(topic, label = "Hilfe") {
+  return `<button class="teacher-help-trigger" type="button" data-help-topic="${escapeHtml(topic)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">?</button>`;
+}
+
+function getStudentFormValues(activeStudent) {
+  if (!activeStudent) {
+    return null;
+  }
+
+  const draft = teacherState.studentFormDraft;
+  if (!draft || draft.studentId !== activeStudent.studentId) {
+    return {
+      importedDisplayName: activeStudent.importedDisplayName || "",
+      firstName: activeStudent.firstName || "",
+      lastName: activeStudent.lastName || "",
+      email: activeStudent.email || "",
+      messengerId: activeStudent.messengerId || "",
+      classId: activeStudent.classId || "",
+      profileLabel: activeStudent.profileLabel || "",
+      importedInstrument: activeStudent.importedInstrument || "",
+      importedGoal: String(activeStudent.importedGoal || 15),
+    };
+  }
+
+  return {
+    importedDisplayName: draft.importedDisplayName ?? activeStudent.importedDisplayName ?? "",
+    firstName: draft.firstName ?? activeStudent.firstName ?? "",
+    lastName: draft.lastName ?? activeStudent.lastName ?? "",
+    email: draft.email ?? activeStudent.email ?? "",
+    messengerId: draft.messengerId ?? activeStudent.messengerId ?? "",
+    classId: draft.classId ?? activeStudent.classId ?? "",
+    profileLabel: draft.profileLabel ?? activeStudent.profileLabel ?? "",
+    importedInstrument: draft.importedInstrument ?? activeStudent.importedInstrument ?? "",
+    importedGoal: draft.importedGoal ?? String(activeStudent.importedGoal || 15),
+  };
+}
+
+function getCurrentCardDraftContextId(activeCard) {
+  return activeCard?.id || "__new__";
+}
+
+function getCardFormValues(activeCard) {
+  const base = activeCard ? normalizeTeacherCard(activeCard) : emptyCardDraft();
+  const draft = teacherState.cardFormDraft;
+  if (!draft || draft.contextId !== getCurrentCardDraftContextId(activeCard)) {
+    return base;
+  }
+
+  return normalizeTeacherCard({
+    ...base,
+    title: draft.title ?? base.title,
+    description: draft.description ?? base.description,
+    accent: draft.accent ?? base.accent,
+    symbol: draft.symbol ?? base.symbol,
+    rarity: draft.rarity ?? base.rarity,
+    status: draft.status ?? base.status,
+    assignment: {
+      ...base.assignment,
+      type: draft.assignmentType ?? base.assignment.type,
+      targetId: draft.assignmentTargetId ?? base.assignment.targetId,
+    },
+    rule: {
+      ...base.rule,
+      type: draft.ruleType ?? base.rule.type,
+      value: Number(draft.ruleValue ?? base.rule.value) || 0,
+      category: draft.ruleCategory ?? base.rule.category,
+    },
+  });
+}
+
+function getPracticeCategoriesTextareaValue() {
+  return teacherState.practiceCategoriesDraft || getEffectivePracticeCategories().join("\n");
+}
+
+function getManualAwardFormValues(activeCard, selectedLearner) {
+  const base = {
+    studentId: selectedLearner?.studentId || "",
+    note: "",
+  };
+  const draft = teacherState.manualAwardDraft;
+  if (!activeCard || !draft || draft.cardId !== activeCard.id) {
+    return base;
+  }
+  return {
+    studentId: draft.studentId ?? base.studentId,
+    note: draft.note ?? "",
+  };
+}
+
+function getTeacherHelpTopic(topic) {
+  return teacherHelpTopics[topic] || {
+    eyebrow: "Hilfe",
+    title: "Hinweis",
+    text: "Für diesen Bereich ist noch keine eigene Erklärung hinterlegt.",
+    bullets: [],
+  };
 }
 
 function getPersonId(student) {
@@ -1436,7 +1736,10 @@ async function fetchTeacherSyncSnapshot() {
     throw new Error("fehlender-teacher-key");
   }
 
-  const response = await fetch(`${teacherState.syncBaseUrl}/teacher-sync`, {
+  const cacheBust = `t=${Date.now()}`;
+  const separator = teacherState.syncBaseUrl.includes("?") ? "&" : "?";
+  const response = await fetch(`${teacherState.syncBaseUrl}/teacher-sync${separator}${cacheBust}`, {
+    cache: "no-store",
     headers: {
       "X-FleissTakt-Teacher-Key": teacherState.syncTeacherKey,
     },
@@ -1599,22 +1902,44 @@ async function pushTeacherRosterToServer() {
 }
 
 function importTeacherSyncSnapshot(snapshot, options = {}) {
-  const { preserveLocalCardsOnEmpty = false } = options;
+  const {
+    preserveLocalCardsOnEmpty = false,
+    preserveLocalClassesOnEmpty = false,
+    preserveMissingLocalClasses = false,
+  } = options;
   const previousCards = Array.isArray(teacherState.cardLibrary) ? teacherState.cardLibrary : [];
+  const previousClasses = Array.isArray(teacherState.classes) ? teacherState.classes : [];
   const incomingCards = Array.isArray(snapshot.cardLibrary)
     ? snapshot.cardLibrary.map(normalizeTeacherCard)
     : [];
-  const preservedLocalCards = preserveLocalCardsOnEmpty
-    && previousCards.length > 0
-    && incomingCards.length === 0;
-
-  teacherState.practiceCategories = normalizePracticeCategories(snapshot.categories);
-  teacherState.classes = Array.isArray(snapshot.classes)
+  const incomingClasses = Array.isArray(snapshot.classes)
     ? snapshot.classes
         .filter((item) => item?.id && item?.name)
         .map((item) => ({ id: item.id, name: item.name }))
         .sort((a, b) => a.name.localeCompare(b.name, "de"))
     : [];
+  const preservedLocalCards = preserveLocalCardsOnEmpty
+    && previousCards.length > 0
+    && incomingCards.length === 0;
+  const preservedLocalClasses = preserveLocalClassesOnEmpty
+    && previousClasses.length > 0
+    && incomingClasses.length === 0;
+  const mergedLocalClasses = preserveMissingLocalClasses
+    ? (() => {
+        const merged = new Map(incomingClasses.map((item) => [item.id, item]));
+        previousClasses.forEach((item) => {
+          if (!merged.has(item.id)) {
+            merged.set(item.id, item);
+          }
+        });
+        return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+      })()
+    : incomingClasses;
+  const preservedMissingLocalClasses = preserveMissingLocalClasses
+    && previousClasses.some((item) => !incomingClasses.find((incoming) => incoming.id === item.id));
+
+  teacherState.practiceCategories = normalizePracticeCategories(snapshot.categories);
+  teacherState.classes = preservedLocalClasses ? previousClasses : mergedLocalClasses;
   teacherState.students = Array.isArray(snapshot.students)
     ? snapshot.students.map(normalizeTeacherStudent)
     : [];
@@ -1623,12 +1948,19 @@ function importTeacherSyncSnapshot(snapshot, options = {}) {
     ? snapshot.feedbackRounds
     : [];
   teacherState.syncTeacherLabel = snapshot.teacher?.displayName || teacherState.syncTeacherLabel;
-  teacherState.lastImportSummary = preservedLocalCards
-    ? "Lokale Kärtchenbibliothek beibehalten, weil der Server nach dem Sync noch keine Kärtchen zurückgemeldet hat."
-    : (snapshot.lastImportSummary || "Serverdaten übernommen.");
-  teacherState.statusLine = preservedLocalCards
-    ? "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten."
-    : (snapshot.statusLine || "Mit dem FleißTakt-Server synchronisiert.");
+  if (preservedLocalCards) {
+    teacherState.lastImportSummary = "Lokale Kärtchenbibliothek beibehalten, weil der Server nach dem Sync noch keine Kärtchen zurückgemeldet hat.";
+    teacherState.statusLine = "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten.";
+  } else if (preservedLocalClasses) {
+    teacherState.lastImportSummary = "Lokale Klassen beibehalten, weil der Server direkt nach dem Sync noch keine Klassen zurückgemeldet hat.";
+    teacherState.statusLine = "Serverstand geladen. Lokale Klassen vorsorglich beibehalten.";
+  } else if (preservedMissingLocalClasses) {
+    teacherState.lastImportSummary = "Lokale Klassenliste vorsorglich ergänzt, weil der Server direkt nach dem Sync noch nicht alle Klassen zurückgemeldet hat.";
+    teacherState.statusLine = "Serverstand geladen. Fehlende Klassen lokal vorsorglich ergänzt.";
+  } else {
+    teacherState.lastImportSummary = snapshot.lastImportSummary || "Serverdaten übernommen.";
+    teacherState.statusLine = snapshot.statusLine || "Mit dem FleißTakt-Server synchronisiert.";
+  }
   teacherState.selectedClassId = teacherState.selectedClassId === "all"
     ? "all"
     : (teacherState.classes.find((item) => item.id === teacherState.selectedClassId)?.id || "all");
@@ -1644,6 +1976,8 @@ function importTeacherSyncSnapshot(snapshot, options = {}) {
   persistTeacherState();
   return {
     preservedLocalCards,
+    preservedLocalClasses,
+    preservedMissingLocalClasses,
   };
 }
 
@@ -2312,7 +2646,10 @@ function renderFeedbackWorkspace() {
       <div class="workspace-hero">
         <div>
           <p class="teacher-eyebrow">Feedback-Workspace</p>
-          <h2>${escapeHtml(round?.title || "Feedback")}</h2>
+          <div class="teacher-help-heading">
+            <h2>${escapeHtml(round?.title || "Feedback")}</h2>
+            ${renderHelpTrigger("feedback", "Hilfe zu Feedback")}
+          </div>
           <p class="teacher-subline">Anonyme Rückmeldungen aus dem Unterricht, sichtbar nur als gemeinsame Auswertung.</p>
         </div>
         <div class="detail-badges">
@@ -2433,13 +2770,25 @@ function renderClassesWorkspace() {
   const currentClass = selectedClass();
   const visibleStudents = filteredStudents().sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"));
   const classEntries = visibleStudents.flatMap((student) => student.entries);
+  const assignableStudents = currentClass
+    ? teacherState.students
+        .filter((student) => student.classId !== currentClass.id)
+        .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"))
+    : [];
+  const currentClassStudentCount = currentClass
+    ? teacherState.students.filter((student) => student.classId === currentClass.id).length
+    : 0;
+  const hasAnyStudents = teacherState.students.length > 0;
 
   return `
     <section class="workspace-main">
       <div class="workspace-hero">
         <div>
           <p class="teacher-eyebrow">Klassen-Workspace</p>
-          <h2>${escapeHtml(currentClass?.name || "Alle Klassen")}</h2>
+          <div class="teacher-help-heading">
+            <h2>${escapeHtml(currentClass?.name || "Alle Klassen")}</h2>
+            ${renderHelpTrigger("classes", "Hilfe zu Klassen")}
+          </div>
           <p class="teacher-subline">Ruhiger Überblick über Lerngruppen, Beteiligung und letzte Aktivität.</p>
         </div>
         <div class="detail-badges">
@@ -2503,8 +2852,13 @@ function renderClassesWorkspace() {
                   .map(
                     (student) => `
                       <article class="roster-row">
-                        ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`)}
-                        <span>${student.latestReportMinutes} Min</span>
+                        <div class="roster-row-main">
+                          ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`)}
+                        </div>
+                        <div class="roster-row-side">
+                          <span>${student.latestReportMinutes} Min</span>
+                          ${currentClass ? `<button class="teacher-button teacher-button-subtle" type="button" data-remove-student-from-class="${student.studentId}">Aus Klasse entfernen</button>` : ""}
+                        </div>
                       </article>
                     `,
                   )
@@ -2512,6 +2866,58 @@ function renderClassesWorkspace() {
               : `<p class="empty-copy">Für diese Auswahl gibt es noch keine Lernenden.</p>`
           }
         </div>
+      </section>
+
+      <section class="detail-card">
+        <div class="sidebar-head">
+          <div>
+            <div class="teacher-help-heading teacher-help-heading-inline">
+              <h3>Unterricht zu einer Klasse zuordnen</h3>
+              ${renderHelpTrigger("class_assignment", "Hilfe zur Klassenzuordnung")}
+            </div>
+            <p class="detail-note">${currentClass ? `Wähle Unterrichte aus, die zu ${currentClass.name} gehören sollen.` : "Wähle zuerst links oder oben eine Klasse aus."}</p>
+          </div>
+          <span>${currentClass ? assignableStudents.length : 0}</span>
+        </div>
+        ${
+          currentClass
+            ? `
+              <div class="roster-list">
+                ${
+                  assignableStudents.length
+                    ? assignableStudents.map((student) => `
+                        <article class="roster-row">
+                          <div class="roster-row-main">
+                            ${renderStudentNameBlock(student, `${getProfileDescriptor(student)} · ${getClassName(student.classId)}`)}
+                          </div>
+                          <div class="roster-row-side">
+                            <button class="teacher-button teacher-button-primary" type="button" data-assign-student-to-class="${student.studentId}">Dieser Klasse zuordnen</button>
+                          </div>
+                        </article>
+                      `).join("")
+                    : `<p class="empty-copy">${hasAnyStudents ? "Alle sichtbaren Unterrichte sind dieser Klasse bereits zugeordnet." : "Es gibt noch keine Lernenden und noch keine Unterrichte zum Zuordnen."}</p>`
+                }
+              </div>
+            `
+            : `<p class="empty-copy">Bitte zuerst eine konkrete Klasse auswählen, damit Unterrichte zugeordnet werden können.</p>`
+        }
+      </section>
+
+      <section class="detail-card">
+        <div class="sidebar-head">
+          <div>
+            <h3>Klasse verwalten</h3>
+            <p class="detail-note">${currentClass ? "Leere Klassen lassen sich direkt löschen. Bei zugeordneten Unterrichten wird die Zuordnung vorher entfernt." : "Bitte zuerst eine Klasse auswählen."}</p>
+          </div>
+        </div>
+        <div class="teacher-inline-actions teacher-inline-actions-wrap">
+          <button class="teacher-button" type="button" id="delete-class-button" ${currentClass ? "" : "disabled"}>Klasse löschen</button>
+        </div>
+        ${
+          currentClass
+            ? `<p class="detail-note">Aktuell sind ${currentClassStudentCount} Unterrichte dieser Klasse zugeordnet.</p>`
+            : ""
+        }
       </section>
     </section>
   `;
@@ -2532,8 +2938,12 @@ function renderOverviewWorkspace() {
       <div class="workspace-hero workspace-hero-overview">
         <div>
           <p class="teacher-eyebrow">Übersichts-Workspace</p>
-          <h2>Lehrkräfte Studio auf einen Blick</h2>
+          <div class="teacher-help-heading">
+            <h2>Lehrkräfte Studio auf einen Blick</h2>
+            ${renderHelpTrigger("overview", "Hilfe zur Übersicht")}
+          </div>
           <p class="teacher-subline">Kennzahlen, letzte Importe und der aktuelle Stand der Kartenbibliothek in einem ruhigen Startbereich.</p>
+          ${renderTeacherIdentityLine()}
         </div>
         <div class="detail-badges overview-badge-stack">
           <span>${overview.studentCount} Lernende</span>
@@ -2674,7 +3084,10 @@ function renderWeekWorkspace() {
       <div class="workspace-hero">
         <div>
           <p class="teacher-eyebrow">Wochen-Workspace</p>
-          <h2>${escapeHtml(currentClass?.name ? `Woche in ${currentClass.name}` : "Aktuelle Woche")}</h2>
+          <div class="teacher-help-heading">
+            <h2>${escapeHtml(currentClass?.name ? `Woche in ${currentClass.name}` : "Aktuelle Woche")}</h2>
+            ${renderHelpTrigger("week", "Hilfe zur Woche")}
+          </div>
           <p class="teacher-subline">Arbeitsansicht für die laufende Woche mit Aktivität, letzter Rückmeldung und direktem Blick auf offene Unterrichte.</p>
         </div>
         <div class="detail-badges">
@@ -2812,6 +3225,7 @@ function renderWeekWorkspace() {
 
 function renderStudentsWorkspace(students) {
   const activeStudent = students.find((student) => student.studentId === teacherState.selectedStudentId) || students[0] || null;
+  const formValues = getStudentFormValues(activeStudent);
   const personProfiles = activeStudent
     ? teacherState.students
         .filter((student) => getPersonId(student) === getPersonId(activeStudent))
@@ -2819,7 +3233,7 @@ function renderStudentsWorkspace(students) {
     : [];
   const classOptions = teacherState.classes
     .sort((a, b) => a.name.localeCompare(b.name, "de"))
-    .map((item) => `<option value="${item.id}" ${activeStudent?.classId === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+    .map((item) => `<option value="${item.id}" ${formValues?.classId === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
     .join("");
   const mergeOptions = teacherState.students
     .filter((student) => activeStudent && student.studentId !== activeStudent.studentId)
@@ -2852,7 +3266,10 @@ function renderStudentsWorkspace(students) {
       <section class="detail-header">
         <div>
           <p class="teacher-eyebrow">Lernenden-Workspace</p>
-          <h2>${escapeHtml(getDisplayName(activeStudent))}</h2>
+          <div class="teacher-help-heading">
+            <h2>${escapeHtml(getDisplayName(activeStudent))}</h2>
+            ${renderHelpTrigger("students", "Hilfe zu Lernenden")}
+          </div>
           ${getFormalName(activeStudent) && getFormalName(activeStudent) !== getDisplayName(activeStudent) ? `<p class="teacher-subline teacher-subline-secondary">${escapeHtml(getFormalName(activeStudent))}</p>` : ""}
           <p class="teacher-subline">${personProfiles.length} Unterrichte · Aktuell: ${escapeHtml(activeStudent.profileLabel || activeStudent.importedInstrument || "Unterricht")} · Ziel ${activeStudent.importedGoal || 0} Minuten</p>
         </div>
@@ -2881,15 +3298,83 @@ function renderStudentsWorkspace(students) {
               `,
             )
             .join("")}
-          <button class="teacher-button" type="button" id="add-profile-button">Unterricht hinzufügen</button>
           <button class="teacher-button" type="button" id="delete-profile-button">Unterricht löschen</button>
         </div>
+        <div class="teacher-inline-actions teacher-inline-actions-emphasis">
+          <button class="teacher-button teacher-button-primary teacher-button-strong" type="button" id="add-profile-button">Neuen Unterricht für diese lernende Person anlegen</button>
+        </div>
+      </section>
+
+      <section class="detail-grid">
+        <form class="detail-card" id="student-form">
+          <div class="teacher-help-heading teacher-help-heading-inline">
+            <h3>Stammdaten und aktueller Unterricht</h3>
+            ${renderHelpTrigger("student_form", "Hilfe zu Stammdaten und Unterricht")}
+          </div>
+          <input type="hidden" id="student-id" value="${escapeHtml(activeStudent.studentId)}" />
+          <label>
+            <span>Anzeigename</span>
+            <input id="student-display-name" type="text" value="${escapeHtml(formValues?.importedDisplayName || "")}" />
+          </label>
+          <label>
+            <span>Vorname</span>
+            <input id="student-first-name" type="text" value="${escapeHtml(formValues?.firstName || "")}" />
+          </label>
+          <label>
+            <span>Nachname</span>
+            <input id="student-last-name" type="text" value="${escapeHtml(formValues?.lastName || "")}" />
+          </label>
+          <label>
+            <span>E-Mail</span>
+            <input id="student-email" type="text" value="${escapeHtml(formValues?.email || "")}" />
+          </label>
+          <label>
+            <span>Messenger-ID</span>
+            <input id="student-messenger" type="text" value="${escapeHtml(formValues?.messengerId || "")}" />
+          </label>
+          <label>
+            <span>Klasse</span>
+            <select id="student-class-id">
+              <option value="">Ohne Klasse</option>
+              ${classOptions}
+            </select>
+          </label>
+          <label>
+              <span>Unterrichtsbezeichnung</span>
+            <input id="student-profile-label" type="text" value="${escapeHtml(formValues?.profileLabel || "")}" />
+          </label>
+          <label>
+            <span>Instrument</span>
+            <input id="student-instrument" type="text" list="teacher-instrument-options" value="${escapeHtml(formValues?.importedInstrument || "")}" />
+          </label>
+          <datalist id="teacher-instrument-options">
+            ${teacherInstrumentOptions.map((instrument) => `<option value="${escapeHtml(instrument)}"></option>`).join("")}
+          </datalist>
+          <label>
+            <span>Tagesziel in Minuten</span>
+            <input id="student-goal" type="number" min="5" step="5" value="${escapeHtml(formValues?.importedGoal || "15")}" />
+          </label>
+          <button class="teacher-button teacher-button-primary" type="submit">Lernende Person speichern</button>
+        </form>
+
+        <article class="detail-card">
+          <h3>Berichtsstand</h3>
+          <dl class="detail-metrics">
+            <div><dt>Berichte empfangen</dt><dd>${activeStudent.reportsReceived}</dd></div>
+            <div><dt>Übetage</dt><dd>${activeStudent.latestReportUniqueDaysCount}</dd></div>
+            <div><dt>Notizen</dt><dd>${activeStudent.latestReportNotedCount}</dd></div>
+            <div><dt>Letzter Import</dt><dd>${activeStudent.lastImportedAt ? new Date(activeStudent.lastImportedAt).toLocaleString("de-DE") : "—"}</dd></div>
+          </dl>
+        </article>
       </section>
 
       <section class="detail-card detail-action-card">
         <div class="sidebar-head">
           <div>
-            <h3>Kopplung für die Lernenden-App</h3>
+            <div class="teacher-help-heading teacher-help-heading-inline">
+              <h3>Kopplung für die Lernenden-App</h3>
+              ${renderHelpTrigger("coupling", "Hilfe zur Kopplung")}
+            </div>
             <p class="detail-note">Kurzablauf: App teilen, Unterricht synchronisieren, QR-Code oder ID und Code weitergeben.</p>
           </div>
         </div>
@@ -2919,79 +3404,6 @@ function renderStudentsWorkspace(students) {
           <button class="teacher-button" type="button" id="copy-connect-code" ${(activeStudent.studentId && activeStudent.connectCode) ? "" : "disabled"}>Code kopieren</button>
         </div>
         <p class="detail-note">${activeStudent.connectCode ? "ID und 4-stelliger Code sind bereit. Jetzt einfach QR-Code zeigen oder beides teilen." : "Nach dem ersten erfolgreichen Server-Sync erscheinen hier automatisch Lernenden-ID und Verbindungscode."}</p>
-      </section>
-
-      <section class="detail-card detail-action-card">
-        <div class="sidebar-head">
-          <div>
-            <h3>Ausnahmeweg: Profilpaket</h3>
-            <p class="detail-note">Nur für Ausnahmefälle, wenn QR-Code und Code-Eingabe nicht funktionieren.</p>
-          </div>
-        </div>
-        <div class="teacher-inline-actions teacher-inline-actions-wrap">
-          <button class="teacher-button teacher-button-primary" type="button" id="download-profile-package">Profilpaket laden</button>
-          <button class="teacher-button" type="button" id="share-profile-package">Teilen</button>
-        </div>
-      </section>
-
-      <section class="detail-grid">
-        <form class="detail-card" id="student-form">
-          <h3>Stammdaten und aktueller Unterricht</h3>
-          <input type="hidden" id="student-id" value="${escapeHtml(activeStudent.studentId)}" />
-          <label>
-            <span>Anzeigename</span>
-            <input id="student-display-name" type="text" value="${escapeHtml(activeStudent.importedDisplayName)}" />
-          </label>
-          <label>
-            <span>Vorname</span>
-            <input id="student-first-name" type="text" value="${escapeHtml(activeStudent.firstName)}" />
-          </label>
-          <label>
-            <span>Nachname</span>
-            <input id="student-last-name" type="text" value="${escapeHtml(activeStudent.lastName)}" />
-          </label>
-          <label>
-            <span>E-Mail</span>
-            <input id="student-email" type="text" value="${escapeHtml(activeStudent.email)}" />
-          </label>
-          <label>
-            <span>Messenger-ID</span>
-            <input id="student-messenger" type="text" value="${escapeHtml(activeStudent.messengerId)}" />
-          </label>
-          <label>
-            <span>Klasse</span>
-            <select id="student-class-id">
-              <option value="">Ohne Klasse</option>
-              ${classOptions}
-            </select>
-          </label>
-          <label>
-              <span>Unterrichtsbezeichnung</span>
-            <input id="student-profile-label" type="text" value="${escapeHtml(activeStudent.profileLabel || "")}" />
-          </label>
-          <label>
-            <span>Instrument</span>
-            <input id="student-instrument" type="text" list="teacher-instrument-options" value="${escapeHtml(activeStudent.importedInstrument || "")}" />
-          </label>
-          <datalist id="teacher-instrument-options">
-            ${teacherInstrumentOptions.map((instrument) => `<option value="${escapeHtml(instrument)}"></option>`).join("")}
-          </datalist>
-          <label>
-            <span>Tagesziel in Minuten</span>
-            <input id="student-goal" type="number" min="5" step="5" value="${escapeHtml(String(activeStudent.importedGoal || 15))}" />
-          </label>
-          <button class="teacher-button teacher-button-primary" type="submit">Lernende Person speichern</button>
-        </form>
-
-        <article class="detail-card">
-          <h3>Berichtsstand</h3>
-          <dl class="detail-metrics">
-            <div><dt>Berichte empfangen</dt><dd>${activeStudent.reportsReceived}</dd></div>
-            <div><dt>Übetage</dt><dd>${activeStudent.latestReportUniqueDaysCount}</dd></div>
-            <div><dt>Notizen</dt><dd>${activeStudent.latestReportNotedCount}</dd></div>
-            <div><dt>Letzter Import</dt><dd>${activeStudent.lastImportedAt ? new Date(activeStudent.lastImportedAt).toLocaleString("de-DE") : "—"}</dd></div>
-          </dl>
-        </article>
       </section>
 
       <section class="detail-card">
@@ -3070,14 +3482,29 @@ function renderStudentsWorkspace(students) {
           }
         </div>
       </section>
+
+      <section class="detail-card detail-action-card">
+        <div class="sidebar-head">
+          <div>
+            <h3>Ausnahmeweg: Profilpaket</h3>
+            <p class="detail-note">Nur für Ausnahmefälle, wenn QR-Code und Code-Eingabe nicht funktionieren.</p>
+          </div>
+        </div>
+        <div class="teacher-inline-actions teacher-inline-actions-wrap">
+          <button class="teacher-button teacher-button-primary" type="button" id="download-profile-package">Profilpaket laden</button>
+          <button class="teacher-button" type="button" id="share-profile-package">Teilen</button>
+        </div>
+      </section>
     </section>
   `;
 }
 
 function renderCardsWorkspace(cards) {
   const activeCard = cards.find((card) => card.id === teacherState.selectedCardId) || null;
-  const cardDraft = activeCard || emptyCardDraft();
+  const cardDraft = getCardFormValues(activeCard);
   const selectedLearner = selectedStudent();
+  const practiceCategoriesText = getPracticeCategoriesTextareaValue();
+  const manualAwardValues = getManualAwardFormValues(activeCard, selectedLearner);
   const awardedCards = activeCard ? getAwardedCardsForCard(activeCard) : [];
   const latestAward = awardedCards[0] || null;
   const practiceCategories = getEffectivePracticeCategories();
@@ -3094,17 +3521,15 @@ function renderCardsWorkspace(cards) {
     .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"))
     .map((student) => `<option value="${student.studentId}" ${cardDraft.assignment.type === "student" && cardDraft.assignment.targetId === student.studentId ? "selected" : ""}>${escapeHtml(getDisplayName(student))} · ${escapeHtml(student.profileLabel || student.importedInstrument || "")}</option>`)
     .join("");
-  const manualAwardOptions = teacherState.students
-    .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"))
-    .map((student) => `<option value="${student.studentId}" ${selectedLearner?.studentId === student.studentId ? "selected" : ""}>${escapeHtml(getDisplayName(student))} · ${escapeHtml(student.profileLabel || student.importedInstrument || "Profil")}</option>`)
-    .join("");
-
   return `
     <section class="workspace-main">
       <div class="workspace-hero">
         <div>
           <p class="teacher-eyebrow">Kärtchen-Workspace</p>
-          <h2>Lehrkräfte-Kärtchen gestalten</h2>
+          <div class="teacher-help-heading">
+            <h2>Lehrkräfte-Kärtchen gestalten</h2>
+            ${renderHelpTrigger("cards", "Hilfe zu Kärtchen")}
+          </div>
           <p class="teacher-subline">Eigene Ziele anlegen, pausieren und bei Bedarf direkt an Lernende verleihen.</p>
         </div>
         <div class="detail-badges">
@@ -3121,7 +3546,7 @@ function renderCardsWorkspace(cards) {
           <form id="practice-categories-form">
             <label>
               <span>Kategorien</span>
-              <textarea id="practice-categories-input" rows="5" placeholder="Eine Kategorie pro Zeile">${escapeHtml(practiceCategories.join("\n"))}</textarea>
+              <textarea id="practice-categories-input" rows="5" placeholder="Eine Kategorie pro Zeile">${escapeHtml(practiceCategoriesText)}</textarea>
               <small>Jede Zeile ergibt eine eigene Kategorie.</small>
             </label>
             <div class="teacher-inline-actions">
@@ -3170,7 +3595,10 @@ function renderCardsWorkspace(cards) {
             <div></div>
           </div>
           <article class="teacher-rule-helper">
-            <strong>${escapeHtml(ruleGuidance.title)}</strong>
+            <div class="teacher-help-heading teacher-help-heading-inline">
+              <strong>${escapeHtml(ruleGuidance.title)}</strong>
+              ${renderHelpTrigger("card_rules", "Hilfe zu Zielbedingung und Zielwert")}
+            </div>
             <p>${escapeHtml(ruleGuidance.text)}</p>
             <small>${escapeHtml(ruleGuidance.example)}</small>
           </article>
@@ -3251,12 +3679,15 @@ function renderCardsWorkspace(cards) {
                     <span>An diesen Unterricht verleihen</span>
                     <select id="manual-award-student-id">
                       <option value="">Unterricht wählen</option>
-                      ${manualAwardOptions}
+                      ${teacherState.students
+                        .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b), "de"))
+                        .map((student) => `<option value="${student.studentId}" ${manualAwardValues.studentId === student.studentId ? "selected" : ""}>${escapeHtml(getDisplayName(student))} · ${escapeHtml(student.profileLabel || student.importedInstrument || "Profil")}</option>`)
+                        .join("")}
                     </select>
                   </label>
                   <label>
                     <span>Notiz der Lehrkraft</span>
-                    <textarea id="manual-award-note" rows="3" maxlength="${CARD_AWARD_NOTE_MAX_LENGTH}" placeholder="Zum Beispiel: Tolle Konzentration in der Stunde."></textarea>
+                    <textarea id="manual-award-note" rows="3" maxlength="${CARD_AWARD_NOTE_MAX_LENGTH}" placeholder="Zum Beispiel: Tolle Konzentration in der Stunde.">${escapeHtml(manualAwardValues.note)}</textarea>
                   </label>
                   <p class="detail-note">Kurz und persönlich wirkt hier am besten. Bis zu ${CARD_AWARD_NOTE_MAX_LENGTH} Zeichen passen gut auf das Kärtchen in der Lernenden-App.</p>
                   <div class="teacher-inline-actions">
@@ -3363,7 +3794,10 @@ function renderTeacherApp() {
       <header class="teacher-topbar">
         <div>
           <p class="teacher-eyebrow">Lehrkräfte-Version</p>
-          <h1>FleißTakt Lehrkräfte Studio</h1>
+          <div class="teacher-title-row">
+            <h1>FleißTakt Lehrkräfte Studio</h1>
+            ${renderTeacherIdentityLine()}
+          </div>
           <p class="teacher-subline">Workspaces für Woche, Klassen, Lernende und Kärtchen</p>
         </div>
         <div class="teacher-actions">
@@ -3516,6 +3950,49 @@ function renderTeacherApp() {
             </div>
           </form>
         </dialog>
+
+        <dialog class="teacher-settings-dialog" id="teacher-help-dialog">
+          <form method="dialog" class="teacher-settings-sheet teacher-help-sheet" tabindex="-1">
+            <div class="workspace-panel-head">
+              <div>
+                <p class="teacher-eyebrow">${escapeHtml(getTeacherHelpTopic(teacherState.helpTopic).eyebrow)}</p>
+                <h2>${escapeHtml(getTeacherHelpTopic(teacherState.helpTopic).title)}</h2>
+              </div>
+              <button class="teacher-button" type="button" id="close-teacher-help-dialog">Schließen</button>
+            </div>
+            <section class="teacher-settings-block">
+              <p class="teacher-settings-copy">${escapeHtml(getTeacherHelpTopic(teacherState.helpTopic).text)}</p>
+              ${
+                getTeacherHelpTopic(teacherState.helpTopic).bullets.length
+                  ? `
+                    <ul class="teacher-help-list">
+                      ${getTeacherHelpTopic(teacherState.helpTopic).bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+                    </ul>
+                  `
+                  : ""
+              }
+            </section>
+          </form>
+        </dialog>
+
+        <dialog class="teacher-settings-dialog" id="teacher-confirm-dialog">
+          <form method="dialog" class="teacher-settings-sheet teacher-help-sheet" tabindex="-1">
+            <div class="workspace-panel-head">
+              <div>
+                <p class="teacher-eyebrow">${teacherState.confirmDialogTone === "danger" ? "Sicherheitsabfrage" : "Bitte bestätigen"}</p>
+                <h2>${escapeHtml(teacherState.confirmDialogTitle || "Bitte bestätigen")}</h2>
+              </div>
+            </div>
+            <section class="teacher-settings-block">
+              <p class="teacher-settings-copy">${escapeHtml(teacherState.confirmDialogMessage)}</p>
+              ${teacherState.confirmDialogDetail ? `<p class="teacher-settings-copy">${escapeHtml(teacherState.confirmDialogDetail)}</p>` : ""}
+            </section>
+            <div class="teacher-update-actions teacher-settings-close">
+              <button class="teacher-button" type="button" id="cancel-teacher-confirm">${escapeHtml(teacherState.confirmDialogCancelLabel)}</button>
+              <button class="teacher-button ${teacherState.confirmDialogTone === "danger" ? "teacher-button-primary teacher-button-danger" : "teacher-button-primary"}" type="button" id="confirm-teacher-confirm">${escapeHtml(teacherState.confirmDialogConfirmLabel)}</button>
+            </div>
+          </form>
+        </dialog>
       </div>
     `;
 
@@ -3526,6 +4003,8 @@ function bindTeacherEvents() {
   const settingsDialog = document.querySelector("#teacher-settings-dialog");
   const profileShareDialog = document.querySelector("#profile-share-dialog");
   const syncProgressDialog = document.querySelector("#sync-progress-dialog");
+  const helpDialog = document.querySelector("#teacher-help-dialog");
+  const confirmDialog = document.querySelector("#teacher-confirm-dialog");
   if (settingsDialog) {
     if (teacherState.settingsOpen && !settingsDialog.open) {
       settingsDialog.showModal();
@@ -3575,6 +4054,34 @@ function bindTeacherEvents() {
     });
   }
 
+  if (helpDialog) {
+    if (teacherState.helpDialogOpen && !helpDialog.open) {
+      helpDialog.showModal();
+    }
+
+    helpDialog.addEventListener("close", () => {
+      if (teacherState.helpDialogOpen) {
+        teacherState.helpDialogOpen = false;
+        teacherState.helpTopic = "";
+        applyTeacherModalScrollLock();
+        renderTeacherApp();
+      }
+    });
+  }
+
+  if (confirmDialog) {
+    if (teacherState.confirmDialogOpen && !confirmDialog.open) {
+      confirmDialog.showModal();
+    }
+
+    confirmDialog.addEventListener("close", () => {
+      if (teacherState.confirmDialogOpen) {
+        closeTeacherConfirmDialog();
+        renderTeacherApp();
+      }
+    });
+  }
+
   settingsDialog?.querySelectorAll("button[id], input[id], select[id], textarea[id]").forEach((element) => {
     element.addEventListener("click", () => {
       teacherState.settingsFocusId = element.id || "";
@@ -3606,6 +4113,36 @@ function bindTeacherEvents() {
     if (teacherState.syncProgressState !== "running") {
       closeSyncProgressDialog();
     }
+  });
+
+  document.querySelector("#close-teacher-help-dialog")?.addEventListener("click", () => {
+    teacherState.helpDialogOpen = false;
+    teacherState.helpTopic = "";
+    applyTeacherModalScrollLock();
+    renderTeacherApp();
+  });
+
+  document.querySelector("#cancel-teacher-confirm")?.addEventListener("click", () => {
+    closeTeacherConfirmDialog();
+    document.querySelector("#teacher-confirm-dialog")?.close();
+    renderTeacherApp();
+  });
+
+  document.querySelector("#confirm-teacher-confirm")?.addEventListener("click", () => {
+    const action = pendingTeacherConfirmAction;
+    closeTeacherConfirmDialog();
+    document.querySelector("#teacher-confirm-dialog")?.close();
+    renderTeacherApp();
+    action?.();
+  });
+
+  document.querySelectorAll("[data-help-topic]").forEach((button) => {
+    button.addEventListener("click", () => {
+      teacherState.helpTopic = button.dataset.helpTopic || "";
+      teacherState.helpDialogOpen = true;
+      applyTeacherModalScrollLock();
+      renderTeacherApp();
+    });
   });
 
   document.querySelector("#copy-profile-share-url")?.addEventListener("click", async () => {
@@ -3774,13 +4311,22 @@ function bindTeacherEvents() {
 
       updateSyncProgress("snapshot", "running", "Aktueller Serverstand wird geladen...");
       const snapshot = await fetchTeacherSyncSnapshot();
-      const importResult = importTeacherSyncSnapshot(snapshot, { preserveLocalCardsOnEmpty: true });
+      const importResult = importTeacherSyncSnapshot(snapshot, {
+        preserveLocalCardsOnEmpty: true,
+        preserveLocalClassesOnEmpty: true,
+        preserveMissingLocalClasses: true,
+      });
       updateSyncProgress("snapshot", "done", "Alle Bereiche wurden erfolgreich synchronisiert.");
       if (importResult.preservedLocalCards) {
         finishSyncProgress("success", "Der Serverstand wurde geladen. Die lokale Kärtchenbibliothek bleibt vorsorglich erhalten, weil der Server noch keine Karten zurückgemeldet hat.");
         teacherState.statusLine = "Serverstand geladen. Lokale Kärtchen vorsorglich beibehalten.";
         teacherState.toast = "Der Server hat direkt nach dem Kärtchen-Sync noch keine Karten zurückgemeldet. Die lokale Bibliothek bleibt deshalb vorerst erhalten.";
         setTeacherSyncState("ok", "Stammdaten und Kärtchen wurden übertragen. Die lokale Bibliothek bleibt vorsorglich erhalten, bis der Server die Karten vollständig zurückmeldet.", { markSynced: true });
+      } else if (importResult.preservedLocalClasses || importResult.preservedMissingLocalClasses) {
+        finishSyncProgress("success", "Der Serverstand wurde geladen. Die lokalen Klassen bleiben vorsorglich erhalten, weil der Server sie direkt nach dem Sync noch nicht vollständig zurückgemeldet hat.");
+        teacherState.statusLine = "Serverstand geladen. Lokale Klassen vorsorglich beibehalten.";
+        teacherState.toast = "Der Server hat direkt nach dem Klassen-Sync noch nicht alle Klassen zurückgemeldet. Die lokale Liste bleibt deshalb vorerst erhalten.";
+        setTeacherSyncState("ok", "Stammdaten wurden übertragen. Die lokalen Klassen bleiben vorsorglich erhalten, bis der Server sie vollständig zurückmeldet.", { markSynced: true });
       } else {
         finishSyncProgress("success", "Stammdaten, Kärtchen und der aktuelle Serverstand sind jetzt synchron.");
         teacherState.statusLine = "Alle Bereiche mit dem Server synchronisiert.";
@@ -3934,6 +4480,22 @@ function bindTeacherEvents() {
     });
   });
 
+  const syncTeacherSettingsDraft = () => {
+    teacherState.syncBaseUrl = document.querySelector("#teacher-sync-base-url")?.value || DEFAULT_SYNC_BASE_URL;
+    teacherState.syncTeacherKey = document.querySelector("#teacher-sync-key")?.value || "";
+    persistTeacherState();
+  };
+
+  ["#teacher-sync-base-url", "#teacher-sync-key"].forEach((selector) => {
+    document.querySelector(selector)?.addEventListener("input", syncTeacherSettingsDraft);
+    document.querySelector(selector)?.addEventListener("change", syncTeacherSettingsDraft);
+  });
+
+  document.querySelector("#class-name-input")?.addEventListener("input", (event) => {
+    teacherState.classDraft = event.target.value || "";
+    persistTeacherState();
+  });
+
   document.querySelector("#class-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const nameInput = document.querySelector("#class-name-input");
@@ -3952,6 +4514,99 @@ function bindTeacherEvents() {
     queueTeacherAutoSync({ roster: true });
   });
 
+  document.querySelectorAll("[data-assign-student-to-class]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const studentId = button.dataset.assignStudentToClass || "";
+      const currentClass = selectedClass();
+      if (!studentId || !currentClass) {
+        return;
+      }
+
+      teacherState.students = teacherState.students.map((student) =>
+        student.studentId === studentId
+          ? normalizeTeacherStudent({
+              ...student,
+              classId: currentClass.id,
+            })
+          : student,
+      );
+      teacherState.statusLine = "Unterricht einer Klasse zugeordnet.";
+      teacherState.toast = `${getDisplayName(teacherState.students.find((student) => student.studentId === studentId) || {})} gehört jetzt zu ${currentClass.name}.`;
+      persistTeacherState();
+      renderTeacherApp();
+      queueTeacherAutoSync({ roster: true });
+    });
+  });
+
+  document.querySelectorAll("[data-remove-student-from-class]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const studentId = button.dataset.removeStudentFromClass || "";
+      if (!studentId) {
+        return;
+      }
+
+      const targetStudent = teacherState.students.find((student) => student.studentId === studentId);
+      if (!targetStudent) {
+        return;
+      }
+
+      teacherState.students = teacherState.students.map((student) =>
+        student.studentId === studentId
+          ? normalizeTeacherStudent({
+              ...student,
+              classId: "",
+            })
+          : student,
+      );
+      teacherState.statusLine = "Unterricht aus der Klasse entfernt.";
+      teacherState.toast = `${getDisplayName(targetStudent)} ist jetzt keiner Klasse zugeordnet.`;
+      persistTeacherState();
+      renderTeacherApp();
+      queueTeacherAutoSync({ roster: true });
+    });
+  });
+
+  document.querySelector("#delete-class-button")?.addEventListener("click", () => {
+    const currentClass = selectedClass();
+    if (!currentClass) {
+      return;
+    }
+
+    const assignedStudents = teacherState.students.filter((student) => student.classId === currentClass.id);
+    openTeacherConfirmDialog(
+      {
+        tone: "danger",
+        title: "Klasse löschen",
+        message: assignedStudents.length
+          ? `Klasse "${currentClass.name}" wirklich löschen?`
+          : `Leere Klasse "${currentClass.name}" wirklich löschen?`,
+        detail: assignedStudents.length
+          ? `Dabei wird die Klassen-Zuordnung bei ${assignedStudents.length} Unterricht${assignedStudents.length === 1 ? "" : "en"} entfernt. Die betroffenen Unterrichte sind danach keiner Klasse mehr zugeordnet.`
+          : "Die Klasse wird endgültig gelöscht.",
+        confirmLabel: "Klasse löschen",
+      },
+      () => {
+        teacherState.students = teacherState.students.map((student) =>
+          student.classId === currentClass.id
+            ? normalizeTeacherStudent({
+                ...student,
+                classId: "",
+              })
+            : student,
+        );
+        teacherState.classes = teacherState.classes.filter((item) => item.id !== currentClass.id);
+        teacherState.selectedClassId = "all";
+        teacherState.statusLine = "Klasse gelöscht.";
+        teacherState.toast = assignedStudents.length
+          ? `Klasse gelöscht. ${assignedStudents.length} Unterrichte sind jetzt keiner Klasse zugeordnet.`
+          : "Leere Klasse gelöscht.";
+        persistTeacherState();
+        renderTeacherApp();
+        queueTeacherAutoSync({ roster: true });
+      },
+    );
+  });
+
   document.querySelectorAll("[data-card-id]").forEach((button) => {
     button.addEventListener("click", () => {
       teacherState.selectedCardId = button.dataset.cardId;
@@ -3962,9 +4617,29 @@ function bindTeacherEvents() {
 
   document.querySelector("#new-card-button")?.addEventListener("click", () => {
     teacherState.selectedCardId = "";
+    teacherState.cardFormDraft = null;
     persistTeacherState();
     renderTeacherApp();
   });
+
+  const syncCardFormDraft = () => {
+    const activeCard = teacherState.cardLibrary.find((card) => card.id === teacherState.selectedCardId) || null;
+    teacherState.cardFormDraft = {
+      contextId: getCurrentCardDraftContextId(activeCard),
+      title: document.querySelector("#card-title")?.value || "",
+      description: document.querySelector("#card-description")?.value || "",
+      ruleType: document.querySelector("#card-rule-type")?.value || "entriesCountAtLeast",
+      ruleValue: document.querySelector("#card-rule-value")?.value || "0",
+      ruleCategory: document.querySelector("#card-rule-category")?.value || "",
+      accent: document.querySelector("#card-accent")?.value || "gold",
+      symbol: document.querySelector("#card-symbol")?.value || "✦",
+      rarity: document.querySelector("#card-rarity")?.value || "Spezial",
+      status: document.querySelector("#card-status")?.value || "active",
+      assignmentType: document.querySelector("#card-assignment-type")?.value || "all",
+      assignmentTargetId: document.querySelector("#card-assignment-target")?.value || "",
+    };
+    persistTeacherState();
+  };
 
   document.querySelector("#card-rule-type")?.addEventListener("change", (event) => {
     const ruleValueInput = document.querySelector("#card-rule-value");
@@ -3986,6 +4661,7 @@ function bindTeacherEvents() {
         ruleCategorySelect.value = "";
       }
     }
+    syncCardFormDraft();
   });
 
   document.querySelector("#card-assignment-type")?.addEventListener("change", (event) => {
@@ -4010,10 +4686,12 @@ function bindTeacherEvents() {
     targetSelect.innerHTML = options.join("");
     targetSelect.disabled = assignmentType === "all";
     targetSelect.value = "";
+    syncCardFormDraft();
   });
 
   document.querySelector("#reset-card-form")?.addEventListener("click", () => {
     teacherState.selectedCardId = "";
+    teacherState.cardFormDraft = null;
     persistTeacherState();
     renderTeacherApp();
   });
@@ -4026,6 +4704,9 @@ function bindTeacherEvents() {
 
     teacherState.cardLibrary = teacherState.cardLibrary.filter((card) => card.id !== cardId);
     teacherState.selectedCardId = "";
+    if (teacherState.cardFormDraft?.contextId === cardId) {
+      teacherState.cardFormDraft = null;
+    }
     persistTeacherState();
     teacherState.toast = "Karte gelöscht.";
     renderTeacherApp();
@@ -4073,14 +4754,38 @@ function bindTeacherEvents() {
 
     teacherState.cardLibrary.sort((a, b) => a.title.localeCompare(b.title, "de"));
     teacherState.selectedCardId = draft.id;
+    teacherState.cardFormDraft = null;
     persistTeacherState();
     renderTeacherApp();
     queueTeacherAutoSync({ cards: true });
   });
 
+  [
+    "#card-title",
+    "#card-description",
+    "#card-rule-type",
+    "#card-rule-value",
+    "#card-rule-category",
+    "#card-accent",
+    "#card-symbol",
+    "#card-rarity",
+    "#card-status",
+    "#card-assignment-type",
+    "#card-assignment-target",
+  ].forEach((selector) => {
+    document.querySelector(selector)?.addEventListener("input", syncCardFormDraft);
+    document.querySelector(selector)?.addEventListener("change", syncCardFormDraft);
+  });
+
+  document.querySelector("#practice-categories-input")?.addEventListener("input", (event) => {
+    teacherState.practiceCategoriesDraft = event.target.value || "";
+    persistTeacherState();
+  });
+
   document.querySelector("#practice-categories-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     teacherState.practiceCategories = normalizePracticeCategories(document.querySelector("#practice-categories-input")?.value || "");
+    teacherState.practiceCategoriesDraft = "";
     teacherState.toast = "Übekategorien aktualisiert.";
     teacherState.statusLine = "Übekategorien lokal gespeichert.";
     persistTeacherState();
@@ -4089,19 +4794,25 @@ function bindTeacherEvents() {
   });
 
   document.querySelector("#load-starter-card-set")?.addEventListener("click", () => {
-    if (!window.confirm("Das Starter-Set mit 20 Kärtchen jetzt in die Bibliothek laden? Bereits vorhandene Kärtchen bleiben erhalten.")) {
-      return;
-    }
-
-    const existingIds = new Set(teacherState.cardLibrary.map((card) => card.id));
-    const starterCards = buildStarterCardSet().filter((card) => !existingIds.has(card.id));
-    teacherState.cardLibrary = [...teacherState.cardLibrary, ...starterCards].sort((a, b) => a.title.localeCompare(b.title, "de"));
-    teacherState.selectedCardId = teacherState.selectedCardId || starterCards[0]?.id || teacherState.selectedCardId;
-    teacherState.toast = `${starterCards.length} Starter-Kärtchen ergänzt.`;
-    teacherState.statusLine = "Starter-Set geladen.";
-    persistTeacherState();
-    renderTeacherApp();
-    queueTeacherAutoSync({ cards: true });
+    openTeacherConfirmDialog(
+      {
+        title: "Starter-Set laden",
+        message: "Das Starter-Set mit 20 Kärtchen jetzt in die Bibliothek laden?",
+        detail: "Bereits vorhandene Kärtchen bleiben erhalten.",
+        confirmLabel: "Starter-Set laden",
+      },
+      () => {
+        const existingIds = new Set(teacherState.cardLibrary.map((card) => card.id));
+        const starterCards = buildStarterCardSet().filter((card) => !existingIds.has(card.id));
+        teacherState.cardLibrary = [...teacherState.cardLibrary, ...starterCards].sort((a, b) => a.title.localeCompare(b.title, "de"));
+        teacherState.selectedCardId = teacherState.selectedCardId || starterCards[0]?.id || teacherState.selectedCardId;
+        teacherState.toast = `${starterCards.length} Starter-Kärtchen ergänzt.`;
+        teacherState.statusLine = "Starter-Set geladen.";
+        persistTeacherState();
+        renderTeacherApp();
+        queueTeacherAutoSync({ cards: true });
+      },
+    );
   });
 
   document.querySelector("#manual-award-form")?.addEventListener("submit", async (event) => {
@@ -4121,6 +4832,7 @@ function bindTeacherEvents() {
       await saveTeacherCardAwardOnServer("award", { cardId, studentId, note });
       const snapshot = await fetchTeacherSyncSnapshot();
       importTeacherSyncSnapshot(snapshot);
+      teacherState.manualAwardDraft = null;
       teacherState.statusLine = "Kärtchen direkt verliehen.";
       teacherState.toast = "Das Kärtchen ist gespeichert und beim nächsten Sync für Lernende sichtbar.";
       persistTeacherState();
@@ -4132,6 +4844,24 @@ function bindTeacherEvents() {
     }
   });
 
+  const syncManualAwardDraft = () => {
+    const cardId = document.querySelector("#manual-award-card-id")?.value || "";
+    if (!cardId) {
+      return;
+    }
+    teacherState.manualAwardDraft = {
+      cardId,
+      studentId: document.querySelector("#manual-award-student-id")?.value || "",
+      note: document.querySelector("#manual-award-note")?.value || "",
+    };
+    persistTeacherState();
+  };
+
+  ["#manual-award-student-id", "#manual-award-note"].forEach((selector) => {
+    document.querySelector(selector)?.addEventListener("input", syncManualAwardDraft);
+    document.querySelector(selector)?.addEventListener("change", syncManualAwardDraft);
+  });
+
   document.querySelectorAll("[data-revoke-award]").forEach((button) => {
     button.addEventListener("click", async () => {
       const awardId = Number(button.dataset.revokeAward || 0);
@@ -4140,23 +4870,30 @@ function bindTeacherEvents() {
         return;
       }
 
-      if (!window.confirm("Dieses direkt verliehene Kärtchen wirklich zurücknehmen?")) {
-        return;
-      }
-
-      try {
-        await saveTeacherCardAwardOnServer("revoke", { awardId, cardId });
-        const snapshot = await fetchTeacherSyncSnapshot();
-        importTeacherSyncSnapshot(snapshot);
-        teacherState.statusLine = "Direkt verliehenes Kärtchen entfernt.";
-        teacherState.toast = "Die direkte Vergabe wurde zurückgenommen.";
-        persistTeacherState();
-        renderTeacherApp();
-      } catch (error) {
-        teacherState.statusLine = "Direkte Vergabe konnte nicht entfernt werden.";
-        teacherState.toast = error?.message || "Das verliehene Kärtchen konnte nicht zurückgenommen werden.";
-        renderTeacherApp();
-      }
+      openTeacherConfirmDialog(
+        {
+          tone: "danger",
+          title: "Direkte Vergabe zurücknehmen",
+          message: "Dieses direkt verliehene Kärtchen wirklich zurücknehmen?",
+          detail: "Das Kärtchen verschwindet danach beim zugeordneten Unterricht wieder aus der direkten Vergabe.",
+          confirmLabel: "Vergabe zurücknehmen",
+        },
+        async () => {
+          try {
+            await saveTeacherCardAwardOnServer("revoke", { awardId, cardId });
+            const snapshot = await fetchTeacherSyncSnapshot();
+            importTeacherSyncSnapshot(snapshot);
+            teacherState.statusLine = "Direkt verliehenes Kärtchen entfernt.";
+            teacherState.toast = "Die direkte Vergabe wurde zurückgenommen.";
+            persistTeacherState();
+            renderTeacherApp();
+          } catch (error) {
+            teacherState.statusLine = "Direkte Vergabe konnte nicht entfernt werden.";
+            teacherState.toast = error?.message || "Das verliehene Kärtchen konnte nicht zurückgenommen werden.";
+            renderTeacherApp();
+          }
+        },
+      );
     });
   });
 
@@ -4233,26 +4970,37 @@ function bindTeacherEvents() {
     }
 
     const samePersonProfiles = teacherState.students.filter((student) => getPersonId(student) === getPersonId(activeStudent));
-    const confirmMessage = samePersonProfiles.length > 1
-        ? `Unterricht "${activeStudent.profileLabel || activeStudent.importedInstrument || "Unterricht"}" wirklich löschen?`
-        : `Dieser Unterricht ist der letzte Unterricht von ${getDisplayName(activeStudent)}. Wirklich alles löschen?`;
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
+    openTeacherConfirmDialog(
+      {
+        tone: "danger",
+        title: "Unterricht löschen",
+        message: samePersonProfiles.length > 1
+          ? `Unterricht "${activeStudent.profileLabel || activeStudent.importedInstrument || "Unterricht"}" wirklich löschen?`
+          : `Dieser Unterricht ist der letzte Unterricht von ${getDisplayName(activeStudent)}.`,
+        detail: samePersonProfiles.length > 1
+          ? "Die Daten dieses Unterrichts werden aus der Lehrkräfte-App entfernt."
+          : "Wenn du fortfährst, wird die gesamte lernende Person mit diesem letzten Unterricht entfernt.",
+        confirmLabel: samePersonProfiles.length > 1 ? "Unterricht löschen" : "Alles löschen",
+      },
+      () => {
+        const nextProfiles = teacherState.students.filter((student) => student.studentId !== activeStudent.studentId);
+        const sibling = samePersonProfiles.find((student) => student.studentId !== activeStudent.studentId);
+        const fallback = nextProfiles[0] || null;
 
-    const nextProfiles = teacherState.students.filter((student) => student.studentId !== activeStudent.studentId);
-    const sibling = samePersonProfiles.find((student) => student.studentId !== activeStudent.studentId);
-    const fallback = nextProfiles[0] || null;
-
-    teacherState.students = nextProfiles;
-    teacherState.selectedStudentId = sibling?.studentId || fallback?.studentId || "";
-      teacherState.statusLine = "Unterricht entfernt.";
-      teacherState.toast = samePersonProfiles.length > 1
-        ? "Der ausgewählte Unterricht wurde gelöscht."
-        : "Die lernende Person hatte nur diesen einen Unterricht und wurde vollständig entfernt.";
-    persistTeacherState();
-    renderTeacherApp();
-    queueTeacherAutoSync({ roster: true });
+        teacherState.students = nextProfiles;
+        if (teacherState.studentFormDraft?.studentId === activeStudent.studentId) {
+          teacherState.studentFormDraft = null;
+        }
+        teacherState.selectedStudentId = sibling?.studentId || fallback?.studentId || "";
+        teacherState.statusLine = "Unterricht entfernt.";
+        teacherState.toast = samePersonProfiles.length > 1
+          ? "Der ausgewählte Unterricht wurde gelöscht."
+          : "Die lernende Person hatte nur diesen einen Unterricht und wurde vollständig entfernt.";
+        persistTeacherState();
+        renderTeacherApp();
+        queueTeacherAutoSync({ roster: true });
+      },
+    );
   });
 
   document.querySelector("#student-form")?.addEventListener("submit", (event) => {
@@ -4262,11 +5010,11 @@ function bindTeacherEvents() {
       return;
     }
 
-          teacherState.students = teacherState.students.map((student) =>
-            student.studentId === studentId
-              ? normalizeTeacherStudent({
-                  ...student,
-                  importedDisplayName: document.querySelector("#student-display-name")?.value?.trim() || student.importedDisplayName || getDisplayName(student),
+    teacherState.students = teacherState.students.map((student) =>
+      student.studentId === studentId
+        ? normalizeTeacherStudent({
+            ...student,
+            importedDisplayName: document.querySelector("#student-display-name")?.value?.trim() || student.importedDisplayName || getDisplayName(student),
                   firstName: document.querySelector("#student-first-name")?.value?.trim() || "",
                   lastName: document.querySelector("#student-last-name")?.value?.trim() || "",
                   email: document.querySelector("#student-email")?.value?.trim() || "",
@@ -4279,10 +5027,50 @@ function bindTeacherEvents() {
         : student,
     );
 
+    if (teacherState.studentFormDraft?.studentId === studentId) {
+      teacherState.studentFormDraft = null;
+    }
+
     persistTeacherState();
     teacherState.toast = "Lernende Person aktualisiert.";
     renderTeacherApp();
     queueTeacherAutoSync({ roster: true });
+  });
+
+  const syncStudentFormDraft = () => {
+    const studentId = document.querySelector("#student-id")?.value || "";
+    if (!studentId) {
+      return;
+    }
+
+    teacherState.studentFormDraft = {
+      studentId,
+      importedDisplayName: document.querySelector("#student-display-name")?.value || "",
+      firstName: document.querySelector("#student-first-name")?.value || "",
+      lastName: document.querySelector("#student-last-name")?.value || "",
+      email: document.querySelector("#student-email")?.value || "",
+      messengerId: document.querySelector("#student-messenger")?.value || "",
+      classId: document.querySelector("#student-class-id")?.value || "",
+      profileLabel: document.querySelector("#student-profile-label")?.value || "",
+      importedInstrument: document.querySelector("#student-instrument")?.value || "",
+      importedGoal: document.querySelector("#student-goal")?.value || "15",
+    };
+    persistTeacherState();
+  };
+
+  [
+    "#student-display-name",
+    "#student-first-name",
+    "#student-last-name",
+    "#student-email",
+    "#student-messenger",
+    "#student-class-id",
+    "#student-profile-label",
+    "#student-instrument",
+    "#student-goal",
+  ].forEach((selector) => {
+    document.querySelector(selector)?.addEventListener("input", syncStudentFormDraft);
+    document.querySelector(selector)?.addEventListener("change", syncStudentFormDraft);
   });
 
   document.querySelector("#download-profile-package")?.addEventListener("click", async () => {

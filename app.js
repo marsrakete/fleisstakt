@@ -78,6 +78,7 @@ const state = {
   pendingProfileImport: null,
   connectStudentIdDraft: "",
   connectCodeDraft: "",
+  profileFormDraft: null,
   scannerOpen: false,
   scannerMessage: "",
   scannerState: "idle",
@@ -102,6 +103,8 @@ let scannerRetryHandle = 0;
 let activeSyncAutoCloseHandle = 0;
 let studentSyncInProgress = false;
 let studentAutoSyncPending = false;
+let introFlight = null;
+let introFlightTimeout = 0;
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -129,6 +132,54 @@ applyReloadStatusFromUrl();
 applyConnectionFromUrl();
 registerServiceWorker();
 
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+}
+
+function createIntroFlight(variant = "start") {
+  const isEntryFlight = variant === "entry";
+  const startX = `${Math.round(-8 - Math.random() * 10)}vw`;
+  const startY = `${Math.round((isEntryFlight ? 36 : 10) + Math.random() * (isEntryFlight ? 30 : 45))}vh`;
+  const midX = `${Math.round((isEntryFlight ? 34 : 28) + Math.random() * 24)}vw`;
+  const midY = `${Math.round((isEntryFlight ? 18 : 8) + Math.random() * (isEntryFlight ? 36 : 50))}vh`;
+  const endX = `${Math.round(92 + Math.random() * 10)}vw`;
+  const endY = `${Math.round((isEntryFlight ? 16 : 6) + Math.random() * (isEntryFlight ? 34 : 52))}vh`;
+  return {
+    id: `intro-${Date.now()}`,
+    variant,
+    durationMs: (isEntryFlight ? 1800 : 2200) + Math.round(Math.random() * (isEntryFlight ? 700 : 900)),
+    noteDelayMs: Math.round(Math.random() * 140),
+    beeDelayMs: 160 + Math.round(Math.random() * 220),
+    startX,
+    startY,
+    midX,
+    midY,
+    endX,
+    endY,
+    loopRadiusX: `${16 + Math.round(Math.random() * 20)}px`,
+    loopRadiusY: `${14 + Math.round(Math.random() * 18)}px`,
+    noteRotateStart: `${Math.round(-14 + Math.random() * 28)}deg`,
+    noteRotateMid: `${Math.round(-20 + Math.random() * 40)}deg`,
+    noteRotateEnd: `${Math.round(-18 + Math.random() * 36)}deg`,
+    beeRotateStart: `${Math.round(-10 + Math.random() * 22)}deg`,
+    beeRotateMid: `${Math.round(-26 + Math.random() * 52)}deg`,
+    beeRotateEnd: `${Math.round(-12 + Math.random() * 24)}deg`,
+  };
+}
+
+function launchIntroFlight(variant = "start") {
+  if (prefersReducedMotion()) {
+    return;
+  }
+  window.clearTimeout(introFlightTimeout);
+  introFlight = createIntroFlight(variant);
+  render();
+  introFlightTimeout = window.setTimeout(() => {
+    introFlight = null;
+    render();
+  }, introFlight.durationMs + introFlight.beeDelayMs + 260);
+}
+
 function applyModalScrollLock() {
   const isLocked = state.settingsOpen
     || state.helpOpen
@@ -144,8 +195,67 @@ function applyModalScrollLock() {
 
 function scannerSupported() {
   return typeof window !== "undefined"
-    && "BarcodeDetector" in window
-    && Boolean(navigator.mediaDevices?.getUserMedia);
+    && Boolean(navigator.mediaDevices?.getUserMedia)
+    && ("BarcodeDetector" in window || typeof window.jsQR === "function");
+}
+
+function qrImageFallbackSupported() {
+  return "BarcodeDetector" in window || typeof window.jsQR === "function";
+}
+
+async function detectQrCodeFromBitmap(bitmap) {
+  if ("BarcodeDetector" in window) {
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const codes = await detector.detect(bitmap);
+    const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+    return rawValue || "";
+  }
+
+  if (typeof window.jsQR === "function") {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      throw new Error("QR-Erkennung konnte nicht vorbereitet werden.");
+    }
+    context.drawImage(bitmap, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+    return `${code?.data || ""}`.trim();
+  }
+
+  return "";
+}
+
+async function detectQrCodeFromVideo(video) {
+  if ("BarcodeDetector" in window) {
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const codes = await detector.detect(video);
+    const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+    return rawValue || "";
+  }
+
+  if (typeof window.jsQR === "function") {
+    const width = video.videoWidth || video.clientWidth || 0;
+    const height = video.videoHeight || video.clientHeight || 0;
+    if (!width || !height) {
+      return "";
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      return "";
+    }
+    context.drawImage(video, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+    return `${code?.data || ""}`.trim();
+  }
+
+  return "";
 }
 
 function connectionScannerText() {
@@ -723,6 +833,7 @@ function syncCurrentStateIntoProfileLibrary() {
 
 function applyStoredProfile(profile) {
   const normalized = normalizeStoredProfile(profile);
+  state.profileFormDraft = null;
   state.activeProfileId = normalized.storageId;
   state.profileName = normalized.profileName;
   state.instrument = normalized.instrument;
@@ -745,6 +856,23 @@ function applyStoredProfile(profile) {
   state.feedbackAnswers = normalized.feedbackAnswers;
   state.feedbackStatus = normalized.feedbackStatus;
   state.feedbackError = normalized.feedbackError;
+}
+
+function getProfileFormValues() {
+  const draft = state.profileFormDraft;
+  if (!draft || draft.profileId !== (state.activeProfileId || state.profileUuid || state.studentId)) {
+    return {
+      profileName: state.profileName,
+      instrument: state.instrument,
+      goal: state.goal,
+    };
+  }
+
+  return {
+    profileName: draft.profileName ?? state.profileName,
+    instrument: draft.instrument ?? state.instrument,
+    goal: Number(draft.goal) || state.goal,
+  };
 }
 
 function isSameStoredProfile(left = {}, right = {}) {
@@ -819,6 +947,9 @@ function hydrateState() {
       || state.profileLibrary[0]
       || legacyProfile,
     );
+    state.profileFormDraft = parsed.profileFormDraft && typeof parsed.profileFormDraft === "object"
+      ? parsed.profileFormDraft
+      : null;
   } catch {
     state.entries = [];
     state.studentId = createStudentId();
@@ -852,6 +983,7 @@ function persistState() {
       customCards: state.customCards,
       profileLibrary: state.profileLibrary,
       activeProfileId: state.activeProfileId,
+      profileFormDraft: state.profileFormDraft,
     }),
   );
 }
@@ -1427,14 +1559,12 @@ async function handleScannedConnectionPayload(rawValue) {
 }
 
 async function scanConnectionImageFile(file) {
-  if (!("BarcodeDetector" in window)) {
+  if (!qrImageFallbackSupported()) {
     throw new Error("QR-Erkennung aus Bildern wird auf diesem Gerät gerade nicht unterstützt.");
   }
-  const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
   const bitmap = await createImageBitmap(file);
   try {
-    const codes = await detector.detect(bitmap);
-    const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+    const rawValue = await detectQrCodeFromBitmap(bitmap);
     if (!rawValue) {
       throw new Error("Kein QR-Code im ausgewählten Bild gefunden.");
     }
@@ -1479,7 +1609,6 @@ async function startQrScanner() {
   state.scannerMessage = "Halte den QR-Code aus der Lehrkräfte-App in den markierten Bereich.";
   render();
 
-  const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
   const tick = async () => {
     if (qrScanAbort || !state.scannerOpen) {
       return;
@@ -1487,8 +1616,7 @@ async function startQrScanner() {
 
     try {
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        const codes = await detector.detect(video);
-        const rawValue = `${codes?.[0]?.rawValue || ""}`.trim();
+        const rawValue = await detectQrCodeFromVideo(video);
         if (rawValue) {
           await handleScannedConnectionPayload(rawValue);
           return;
@@ -1513,7 +1641,7 @@ function openScannerDialog() {
   state.scannerState = "idle";
   state.scannerMessage = scannerSupported()
     ? "Kamera wird vorbereitet..."
-    : "Dieses Gerät unterstützt die direkte Kameraerkennung gerade nicht vollständig.";
+    : "Dieses Gerät unterstützt die direkte Kameraerkennung gerade nicht vollständig. Du kannst trotzdem ein QR-Bild auswählen oder ID und Code eingeben.";
   applyModalScrollLock();
   render();
 }
@@ -2184,7 +2312,7 @@ function logScreen() {
 
       <label class="field">
         <span>Dauer</span>
-        <input id="minutes-range" type="range" min="5" max="60" step="5" value="${state.minutes}" />
+          <input id="minutes-range" type="range" min="2" max="60" step="2" value="${state.minutes}" />
         <strong class="range-value" id="minutes-value">${state.minutes} Minuten</strong>
       </label>
 
@@ -2358,9 +2486,10 @@ function profileScreen() {
   const lastEntries = stats.entries.slice(0, 3);
   const reportData = getReportData(state.reportRange);
   const hasManagedProfile = Boolean(state.syncUploadToken);
+  const profileFormValues = getProfileFormValues();
   const activeTeacherCards = state.customCards.filter((card) => card.status === "active").length;
   const profiles = profileSwitcherOptions();
-  const activeProfileLabel = profiles.find((profile) => profile.storageId === state.activeProfileId)?.profileLabel || state.instrument || "Profil";
+  const activeProfileLabel = profiles.find((profile) => profile.storageId === state.activeProfileId)?.profileLabel || profileFormValues.instrument || "Profil";
   const syncSummary = describeStudentSyncState();
 
   return `
@@ -2386,7 +2515,7 @@ function profileScreen() {
       <form class="settings-form" id="profile-form">
         <div class="profile-connection-card">
           <strong>Aktiver Unterricht</strong>
-          <p>${escapeHtml(state.profileName || "Unbekannt")} · ${escapeHtml(activeProfileLabel)} · Ziel ${state.goal} Minuten</p>
+          <p>${escapeHtml(profileFormValues.profileName || "Unbekannt")} · ${escapeHtml(activeProfileLabel)} · Ziel ${profileFormValues.goal} Minuten</p>
           <small>${state.syncUploadToken ? `Verbunden mit ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)}` : "Noch kein Unterricht mit dem Server verbunden."}</small>
         </div>
         <article class="profile-sync-card tone-${escapeHtml(syncSummary.tone)}">
@@ -2416,7 +2545,7 @@ function profileScreen() {
         </label>
         <label class="field">
           <span>Name</span>
-          <input id="profile-name" type="text" value="${escapeHtml(state.profileName)}" maxlength="24" ${hasManagedProfile ? "readonly" : ""} />
+          <input id="profile-name" type="text" value="${escapeHtml(profileFormValues.profileName)}" maxlength="24" ${hasManagedProfile ? "readonly" : ""} />
           ${hasManagedProfile ? '<small class="field-hint">Der Name kommt aus dem Profil der Lehrkräfte-App und wird hier nicht lokal überschrieben.</small>' : ""}
         </label>
         <label class="field">
@@ -2429,7 +2558,7 @@ function profileScreen() {
                   ${instruments
                     .map(
                       (item) => `
-                        <option value="${item}" ${state.instrument === item ? "selected" : ""}>${item}</option>
+                        <option value="${item}" ${profileFormValues.instrument === item ? "selected" : ""}>${item}</option>
                       `,
                     )
                     .join("")}
@@ -2438,8 +2567,8 @@ function profileScreen() {
         </label>
         <label class="field">
           <span>Tagesziel in Minuten</span>
-          <input id="profile-goal" type="range" min="5" max="60" step="5" value="${state.goal}" ${hasManagedProfile ? "disabled" : ""} />
-          <strong class="range-value" id="goal-value">${state.goal} Minuten</strong>
+          <input id="profile-goal" type="range" min="5" max="60" step="5" value="${profileFormValues.goal}" ${hasManagedProfile ? "disabled" : ""} />
+          <strong class="range-value" id="goal-value">${profileFormValues.goal} Minuten</strong>
           ${hasManagedProfile ? '<small class="field-hint">Das Ziel wird mit dem Profil der Lehrkräfte-App synchronisiert und nicht direkt auf dem Gerät geändert.</small>' : ""}
         </label>
         ${
@@ -2712,6 +2841,32 @@ function render() {
   root.innerHTML = `
     <div class="app-shell">
       <div class="app-frame ${state.celebrate ? "is-celebrating" : ""} ${(state.settingsOpen || state.helpOpen || state.profileImportConfirmOpen || state.resetConfirmOpen || state.resetFinalConfirmOpen || state.scannerOpen || state.syncStatusOpen) ? "is-modal-open" : ""}">
+        ${
+          introFlight
+            ? `<div class="intro-flight ${introFlight.variant === "entry" ? "is-entry-flight" : ""}" aria-hidden="true" style="
+                --intro-duration:${introFlight.durationMs}ms;
+                --intro-note-delay:${introFlight.noteDelayMs}ms;
+                --intro-bee-delay:${introFlight.beeDelayMs}ms;
+                --intro-start-x:${introFlight.startX};
+                --intro-start-y:${introFlight.startY};
+                --intro-mid-x:${introFlight.midX};
+                --intro-mid-y:${introFlight.midY};
+                --intro-end-x:${introFlight.endX};
+                --intro-end-y:${introFlight.endY};
+                --intro-loop-radius-x:${introFlight.loopRadiusX};
+                --intro-loop-radius-y:${introFlight.loopRadiusY};
+                --intro-note-rotate-start:${introFlight.noteRotateStart};
+                --intro-note-rotate-mid:${introFlight.noteRotateMid};
+                --intro-note-rotate-end:${introFlight.noteRotateEnd};
+                --intro-bee-rotate-start:${introFlight.beeRotateStart};
+                --intro-bee-rotate-mid:${introFlight.beeRotateMid};
+                --intro-bee-rotate-end:${introFlight.beeRotateEnd};
+              ">
+                <span class="intro-flight-note">🎵</span>
+                <span class="intro-flight-bee">🐝</span>
+              </div>`
+            : ""
+        }
         <header class="topbar">
           <div>
             <p class="eyebrow">Üben sichtbar machen</p>
@@ -3752,6 +3907,7 @@ function bindEvents() {
   const activeProfileSelect = document.querySelector("#active-profile-select");
   if (activeProfileSelect) {
     activeProfileSelect.addEventListener("change", (event) => {
+      state.profileFormDraft = null;
       activateStoredProfile(event.target.value);
       state.celebrationText = "Profil gewechselt.";
       state.celebrate = true;
@@ -3765,6 +3921,24 @@ function bindEvents() {
 
   const profileForm = document.querySelector("#profile-form");
   if (profileForm) {
+    const syncProfileFormDraft = () => {
+      const profileId = state.activeProfileId || state.profileUuid || state.studentId;
+      state.profileFormDraft = {
+        profileId,
+        profileName: document.querySelector("#profile-name")?.value || "",
+        instrument: state.syncUploadToken ? state.instrument : (document.querySelector("#profile-instrument")?.value || instruments[0]),
+        goal: Number(document.querySelector("#profile-goal")?.value) || 15,
+      };
+      persistState();
+    };
+
+    document.querySelector("#profile-name")?.addEventListener("input", syncProfileFormDraft);
+    document.querySelector("#profile-name")?.addEventListener("change", syncProfileFormDraft);
+    document.querySelector("#profile-instrument")?.addEventListener("input", syncProfileFormDraft);
+    document.querySelector("#profile-instrument")?.addEventListener("change", syncProfileFormDraft);
+    document.querySelector("#profile-goal")?.addEventListener("input", syncProfileFormDraft);
+    document.querySelector("#profile-goal")?.addEventListener("change", syncProfileFormDraft);
+
     profileForm.addEventListener("submit", (event) => {
       event.preventDefault();
       state.profileName = document.querySelector("#profile-name")?.value?.trim() || "";
@@ -3772,6 +3946,7 @@ function bindEvents() {
         state.instrument = document.querySelector("#profile-instrument")?.value || instruments[0];
       }
       state.goal = Number(document.querySelector("#profile-goal")?.value) || 15;
+      state.profileFormDraft = null;
       persistState();
       state.celebrationText = "Profil aktualisiert.";
       state.celebrate = true;
@@ -4003,6 +4178,7 @@ function bindEvents() {
       state.celebrate = true;
       state.activeScreen = "today";
       render();
+      launchIntroFlight("entry");
       if (state.syncUploadToken) {
         void runBackgroundStudentSync();
       }
@@ -4379,3 +4555,6 @@ function downloadFile({ filename, content, mimeType }) {
 }
 
 render();
+window.requestAnimationFrame(() => {
+  launchIntroFlight();
+});

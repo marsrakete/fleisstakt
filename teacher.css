@@ -91,6 +91,14 @@ button {
   color: var(--ink-soft);
 }
 
+.teacher-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 2px;
+}
+
 .teacher-actions {
   display: flex;
   flex-wrap: wrap;
@@ -183,6 +191,12 @@ button {
 
 .teacher-button-primary {
   background: var(--accent);
+  color: #fffaf3;
+}
+
+.teacher-button-danger {
+  background: #b5432d;
+  border-color: rgba(123, 31, 18, 0.18);
   color: #fffaf3;
 }
 
@@ -874,6 +888,17 @@ button {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.teacher-inline-actions-emphasis {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.teacher-button-strong {
+  min-height: 52px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  box-shadow: 0 14px 28px rgba(216, 91, 46, 0.18);
+}
+
 .teacher-static-chip {
   display: inline-flex;
   align-items: center;
@@ -911,6 +936,67 @@ button {
   margin-top: 4px;
   margin-bottom: 0;
   font-size: 0.88rem;
+}
+
+.teacher-identity-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 248, 238, 0.84);
+  border: 1px solid rgba(155, 63, 27, 0.16);
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.teacher-identity-line strong {
+  color: var(--accent-deep);
+}
+
+.teacher-identity-line.is-muted {
+  color: var(--ink-soft);
+}
+
+.teacher-help-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.teacher-help-heading-inline {
+  display: inline-flex;
+}
+
+.teacher-help-heading h2,
+.teacher-help-heading h3,
+.teacher-help-heading strong {
+  margin: 0;
+}
+
+.teacher-help-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(24, 34, 47, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--accent-deep);
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 14px rgba(31, 42, 54, 0.08);
+}
+
+.teacher-help-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--ink-soft);
 }
 
 input[type="text"],
@@ -955,6 +1041,19 @@ select {
 .teacher-entry-row:last-child,
 .roster-row:last-child {
   border-bottom: 0;
+}
+
+.roster-row-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.roster-row-side {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  text-align: right;
+  flex: 0 0 auto;
 }
 
 .card-preview-grid {

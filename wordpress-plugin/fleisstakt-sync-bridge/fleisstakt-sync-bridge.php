@@ -3,7 +3,7 @@
  * Plugin Name: FleißTakt Sync Bridge
  * Plugin URI: https://schwoabamunzee.marsrakete.de/
  * Description: Zentrale Synchronisations- und Verwaltungsbrücke für FleißTakt mit Lehrkräften, Lernenden, Unterrichten, Klassen, Kärtchen und Berichten.
- * Version: 0.25.9
+ * Version: 0.26.2
  * Author: Marsrakete
  * Requires at least: 6.0
  * Requires PHP: 8.0
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('FLEISSTAKT_SYNC_BRIDGE_VERSION', '0.25.9');
+define('FLEISSTAKT_SYNC_BRIDGE_VERSION', '0.26.2');
 define('FLEISSTAKT_SYNC_BRIDGE_FILE', __FILE__);
 define('FLEISSTAKT_SYNC_BRIDGE_PATH', plugin_dir_path(__FILE__));
 define('FLEISSTAKT_SYNC_BRIDGE_URL', plugin_dir_url(__FILE__));

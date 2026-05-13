@@ -76,11 +76,13 @@ class FleissTakt_Sync_Bridge_Repository {
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       class_uuid VARCHAR(64) NOT NULL,
       class_name VARCHAR(128) NOT NULL,
+      teacher_id BIGINT UNSIGNED NULL DEFAULT NULL,
       status VARCHAR(20) NOT NULL DEFAULT 'active',
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL,
       PRIMARY KEY (id),
-      UNIQUE KEY class_uuid (class_uuid)
+      UNIQUE KEY class_uuid (class_uuid),
+      KEY teacher_id (teacher_id)
     ) {$charset};";
 
     $sql[] = "CREATE TABLE {$this->students_table} (
@@ -518,11 +520,12 @@ class FleissTakt_Sync_Bridge_Repository {
         [
           'class_uuid' => $data['class_uuid'] ?: $this->generate_uuid('class'),
           'class_name' => $data['class_name'],
+          'teacher_id' => isset($data['teacher_id']) ? (int) $data['teacher_id'] : null,
           'status' => $data['status'] ?? 'active',
           'created_at' => $now,
           'updated_at' => $now,
         ],
-        ['%s', '%s', '%s', '%s', '%s']
+        ['%s', '%s', '%d', '%s', '%s', '%s']
       ),
       'Klasse konnte nicht gespeichert werden.'
     );
@@ -557,11 +560,12 @@ class FleissTakt_Sync_Bridge_Repository {
       "SELECT c.*,
               COUNT(DISTINCT p.id) AS profile_count,
               COUNT(DISTINCT p.student_id) AS student_count,
-              GROUP_CONCAT(DISTINCT t.display_name ORDER BY t.display_name SEPARATOR ', ') AS teacher_names
+              GROUP_CONCAT(DISTINCT COALESCE(t.display_name, owner.display_name) ORDER BY COALESCE(t.display_name, owner.display_name) SEPARATOR ', ') AS teacher_names
        FROM {$this->classes_table} c
        LEFT JOIN {$this->profiles_table} p ON p.class_id = c.id
        LEFT JOIN {$this->assignments_table} a ON a.student_profile_id = p.id
        LEFT JOIN {$this->teachers_table} t ON t.id = a.teacher_id
+       LEFT JOIN {$this->teachers_table} owner ON owner.id = c.teacher_id
        GROUP BY c.id
        ORDER BY c.class_name ASC",
       ARRAY_A
@@ -1139,11 +1143,12 @@ class FleissTakt_Sync_Bridge_Repository {
               $this->classes_table,
               [
                 'class_name' => $class_name,
+                'teacher_id' => $teacher_id,
                 'status' => 'active',
                 'updated_at' => current_time('mysql', true),
               ],
               ['id' => $existing_class_id],
-              ['%s', '%s', '%s'],
+              ['%s', '%d', '%s', '%s'],
               ['%d']
             ),
             'Klasse konnte nicht aktualisiert werden.'
@@ -1155,6 +1160,7 @@ class FleissTakt_Sync_Bridge_Repository {
         $this->create_class([
           'class_uuid' => $class_uuid,
           'class_name' => $class_name,
+          'teacher_id' => $teacher_id,
           'status' => 'active',
         ]);
         $class_uuid_to_id[$class_uuid] = (int) $this->wpdb->insert_id;
@@ -1987,10 +1993,16 @@ class FleissTakt_Sync_Bridge_Repository {
       $this->wpdb->prepare(
         "SELECT DISTINCT c.id, c.class_uuid, c.class_name
          FROM {$this->classes_table} c
-         INNER JOIN {$this->profiles_table} p ON p.class_id = c.id
-         INNER JOIN {$this->assignments_table} a ON a.student_profile_id = p.id
-         WHERE a.teacher_id = %d
+         WHERE c.teacher_id = %d
+            OR EXISTS (
+              SELECT 1
+              FROM {$this->profiles_table} p
+              INNER JOIN {$this->assignments_table} a ON a.student_profile_id = p.id
+              WHERE p.class_id = c.id
+                AND a.teacher_id = %d
+            )
          ORDER BY c.class_name ASC",
+        $teacher_id,
         $teacher_id
       ),
       ARRAY_A

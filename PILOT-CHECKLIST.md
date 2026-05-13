@@ -16,14 +16,14 @@ Ziel ist nicht mehr, neue große Funktionen zu bauen, sondern das bestehende Pro
 - Lehrkräfte-App ist auf aktuellem Stand
 - Lernenden-App ist auf aktuellem Stand
 - Testgeräte stehen bereit
-- Zuständigkeit ist klar: Wer pflegt Lehrkräfte, Lernende, Profile und Kärtchen?
+- Zuständigkeit ist klar: Wer pflegt Lehrkräfte, Lernende, Unterrichte und Kärtchen?
 - Rückmeldungen werden an einer festen Stelle gesammelt
 
 ## Test-Set anlegen
 
-- 1 Lehrkraft mit 1 Lernprofil
-- 1 Lehrkraft mit mehreren Lernprofilen
-- 1 lernende Person mit 2 Profilen
+- 1 Lehrkraft mit 1 Unterricht
+- 1 Lehrkraft mit mehreren Unterrichten
+- 1 lernende Person mit 2 Unterrichten
 - 1 Klasse mit mehreren Lernenden
 - mindestens 3 regelbasierte Kärtchen
 - mindestens 2 direkt verliehene Kärtchen mit Notiz
@@ -33,7 +33,7 @@ Ziel ist nicht mehr, neue große Funktionen zu bauen, sondern das bestehende Pro
 - Lehrkräfte-App öffnet sauber
 - Lehrkräfte-Key und Server-URL sind hinterlegt
 - Eine neue lernende Person kann angelegt werden
-- Ein neues Lernprofil kann angelegt werden
+- Ein neuer Unterricht kann angelegt werden
 - `Alles synchronisieren` funktioniert ohne Fehler
 - Lernenden-ID und Verbindungscode erscheinen danach
 - Kopplungs-QR wird angezeigt
@@ -57,16 +57,16 @@ Ziel ist nicht mehr, neue große Funktionen zu bauen, sondern das bestehende Pro
 - Regelbasiertes Kärtchen wird bei erfüllter Bedingung freigeschaltet
 - Direkt verliehenes Kärtchen erscheint nach dem Sync in der Lernenden-App
 - Notiz der Lehrkraft wird gut lesbar angezeigt
-- Die Lehrkraft sieht direkte Vergaben beim Lernprofil
+- Die Lehrkraft sieht direkte Vergaben beim Unterricht
 - Die Lehrkraft sieht direkte Vergaben beim Kärtchen selbst
 
-## Mehrprofiligkeit prüfen
+## Mehrunterricht prüfen
 
-- Eine lernende Person kann mehrere Lernprofile haben
-- Die Lehrkraft sieht die Profile sauber getrennt
-- Die Lernenden-App kann zwischen Profilen umschalten
-- Eintrag, Bericht und Kärtchen bleiben am richtigen Lernprofil
-- Ein direkt verliehenes Kärtchen erscheint nur beim richtigen Lernprofil
+- Eine lernende Person kann mehrere Unterrichte haben
+- Die Lehrkraft sieht die Unterrichte sauber getrennt
+- Die Lernenden-App kann zwischen Unterrichten umschalten
+- Eintrag, Bericht und Kärtchen bleiben am richtigen Unterricht
+- Ein direkt verliehenes Kärtchen erscheint nur beim richtigen Unterricht
 
 ## Kärtchen prüfen
 
@@ -103,13 +103,13 @@ Ziel ist nicht mehr, neue große Funktionen zu bauen, sondern das bestehende Pro
 
 - Backup aus dem Plugin exportieren
 - Backup auf zweitem WordPress importieren
-- Lehrkräfte, Lernende, Profile, Kärtchen und Berichte sind danach vorhanden
+- Lehrkräfte, Lernende, Unterrichte, Kärtchen und Berichte sind danach vorhanden
 - Direkte Vergaben sind danach vorhanden
 - Kopplungsdaten funktionieren danach weiter
 
 ## Sprach- und UX-Prüfung
 
-- Verstehen Lehrkräfte die Begriffe `Lernende`, `Lernprofil`, `Kärtchen`, `direkt verliehen`?
+- Verstehen Lehrkräfte die Begriffe `Lernende`, `Unterricht`, `Kärtchen`, `direkt verliehen`?
 - Verstehen Lernende den Kopplungsablauf?
 - Ist klar, wann synchronisiert wurde und wann nicht?
 - Sind Zielbedingungen verständlich?
@@ -133,7 +133,7 @@ Für die Pilotphase bereit, wenn:
 - Sync in beiden Apps stabil läuft
 - Kärtchen-Freischaltung funktioniert
 - Direkte Vergabe funktioniert
-- Mehrprofiligkeit funktioniert
+- Mehrunterricht funktioniert
 - Backup und Wiederherstellung wurden einmal erfolgreich getestet
 - Größere Verständnisschwierigkeiten wurden bereinigt
 
