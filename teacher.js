@@ -26,7 +26,7 @@ const cardRuleTypes = [
 ];
 const cardAccentOptions = ["apricot", "gold", "sky", "mint"];
 const cardRarityOptions = ["Basis", "Bronze", "Silber", "Gold", "Spezial"];
-const defaultPracticeCategories = ["Technik", "Stück", "Tonleiter", "Freies Spiel"];
+const defaultPracticeCategories = ["Hände getrennt üben", "Schneckentempo", "Raupe", "Übarten", "Hör dir gut zu", "Schwere Stellen üben", "Theorie", "Wiederholungen"];
 const teacherWorkspaces = [
   { id: "overview", label: "Übersicht", icon: "▣" },
   { id: "week", label: "Woche", icon: "▤" },

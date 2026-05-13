@@ -86,6 +86,7 @@ Warum das wichtig ist:
 - mehrere Lehrkräfte können denselben WordPress-Server nutzen
 - Lernende können mehreren Lehrkräften zugeordnet sein, zum Beispiel für verschiedene Instrumente
 - Kärtchen, Berichte und Unterrichte müssen pro Lernweg sauber getrennt bleiben
+- auch Übekategorien gehören zur Lehrkraft-Sicht: Neue Lehrkräfte starten mit derselben Vorgabe, pflegen ihre Liste danach aber getrennt voneinander
 
 Das Plugin kann als Admin-Werkzeug alles sehen und pflegen. Im normalen Lehrkräfte-Alltag sorgt die Mandantenlogik aber dafür, dass die Lehrkräfte-App nur die passenden Daten lädt.
 

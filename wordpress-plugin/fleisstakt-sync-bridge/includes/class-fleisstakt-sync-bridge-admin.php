@@ -229,7 +229,7 @@ class FleissTakt_Sync_Bridge_Admin {
           'site_label' => sanitize_text_field((string) ($_POST['site_label'] ?? get_bloginfo('name'))),
           'sync_base_url' => untrailingslashit(esc_url_raw((string) ($_POST['sync_base_url'] ?? site_url('wp-json/fleisstakt-sync/v1')))),
           'learner_app_url' => esc_url_raw((string) ($_POST['learner_app_url'] ?? 'https://marsrakete.github.io/fleisstakt/')),
-          'practice_categories' => preg_split('/\r?\n|,/', (string) ($_POST['practice_categories'] ?? '')),
+          'default_practice_categories' => preg_split('/\r?\n|,/', (string) ($_POST['default_practice_categories'] ?? '')),
         ]);
         $this->redirect_with_notice('settings_saved');
         break;
@@ -434,7 +434,7 @@ class FleissTakt_Sync_Bridge_Admin {
       'Server-URL' => $settings['sync_base_url'] ?? '',
       'Lernenden-App' => $settings['learner_app_url'] ?? '',
       'Berichtsaufbewahrung' => (int) ($settings['retention_days'] ?? 180) . ' Tage',
-      'Übekategorien' => implode(' · ', $settings['practice_categories'] ?? []),
+      'Startvorgabe für Übekategorien' => implode(' · ', $settings['default_practice_categories'] ?? []),
       'Direkt verliehene Kärtchen' => count($card_awards),
     ];
     foreach ($sync_rows as $label => $value) {
@@ -743,7 +743,16 @@ class FleissTakt_Sync_Bridge_Admin {
     echo '<h2>Kärtchenbibliothek</h2>';
     echo '<p>Kärtchen können automatisch über Zielbedingungen freigeschaltet oder später direkt mit persönlicher Notiz verliehen werden. Für Kärtchen ohne automatische Prüfung eignet sich der Regeltyp <strong>Keine</strong>.</p>';
     $settings = $this->repository->get_settings();
-    $practice_categories = $settings['practice_categories'] ?? FleissTakt_Sync_Bridge_Repository::DEFAULT_PRACTICE_CATEGORIES;
+    $practice_categories = $settings['default_practice_categories'] ?? FleissTakt_Sync_Bridge_Repository::DEFAULT_PRACTICE_CATEGORIES;
+    foreach ($teachers as $teacher) {
+      $teacher_categories = preg_split('/\r?\n|,/', (string) ($teacher['practice_categories'] ?? ''));
+      foreach ($teacher_categories as $category) {
+        $category = sanitize_text_field((string) $category);
+        if ($category !== '' && !in_array($category, $practice_categories, true)) {
+          $practice_categories[] = $category;
+        }
+      }
+    }
     $edit_rule_meta = json_decode((string) ($edit_card['rule_meta'] ?? ''), true);
     $edit_rule_category = is_array($edit_rule_meta) ? (string) ($edit_rule_meta['category'] ?? '') : '';
     $this->render_form_start('save_card');
@@ -1051,14 +1060,14 @@ class FleissTakt_Sync_Bridge_Admin {
 
   private function render_settings_tab(array $settings): void {
     echo '<h2>Einstellungen</h2>';
-    echo '<p>Hier legst du den Serverkontext fest, den beide PWAs verwenden. Änderungen an Basis-URL, Lernenden-App-URL oder Kategorien wirken sich direkt auf Kopplung und Synchronisation aus.</p>';
+    echo '<p>Hier legst du den Serverkontext fest, den beide PWAs verwenden. Änderungen an Basis-URL, Lernenden-App-URL oder an der Startvorgabe für neue Lehrkräfte wirken sich direkt auf Kopplung und Synchronisation aus.</p>';
     $this->render_form_start('save_settings');
     echo '<table class="form-table"><tbody>';
     $this->render_text_row('Seitenlabel', 'site_label', $settings['site_label'] ?? get_bloginfo('name'));
     $this->render_text_row('Sync-Basis-URL', 'sync_base_url', $settings['sync_base_url'] ?? trailingslashit(site_url('wp-json/fleisstakt-sync/v1')));
     $this->render_text_row('URL der Lernenden-App', 'learner_app_url', $settings['learner_app_url'] ?? 'https://marsrakete.github.io/fleisstakt/', 'Diese URL wird für die öffentliche Einstiegsseite und den App-QR verwendet.');
     $this->render_number_row('Berichte aufbewahren (Tage)', 'retention_days', (int) ($settings['retention_days'] ?? 180), 30, 3650);
-    echo '<tr><th>Übekategorien</th><td><textarea name="practice_categories" rows="5" class="large-text">' . esc_textarea(implode("\n", $settings['practice_categories'] ?? FleissTakt_Sync_Bridge_Repository::DEFAULT_PRACTICE_CATEGORIES)) . '</textarea><p class="description">Eine Kategorie pro Zeile. Diese Liste wird an Lehrkräfte- und Lernenden-App synchronisiert.</p></td></tr>';
+    echo '<tr><th>Startvorgabe für Übekategorien</th><td><textarea name="default_practice_categories" rows="8" class="large-text">' . esc_textarea(implode("\n", $settings['default_practice_categories'] ?? FleissTakt_Sync_Bridge_Repository::DEFAULT_PRACTICE_CATEGORIES)) . '</textarea><p class="description">Eine Kategorie pro Zeile. Neue Lehrkräfte starten mit dieser Vorgabe und können ihre eigene Liste danach in der Lehrkräfte-App anpassen.</p></td></tr>';
     echo '</tbody></table>';
     submit_button('Einstellungen speichern');
     echo '</form>';

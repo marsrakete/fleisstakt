@@ -1,4 +1,4 @@
-const CACHE_NAME = "fleisstakt-shell-v94";
+const CACHE_NAME = "fleisstakt-shell-v96";
 const APP_ASSETS = [
   "./",
   "./index.html",

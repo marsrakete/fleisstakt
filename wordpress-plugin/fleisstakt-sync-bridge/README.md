@@ -99,6 +99,8 @@ Im normalen Alltag werden Lernende, Unterrichte und Kärtchen bevorzugt in der L
 
 Die Lehrkräfte-App bleibt die angenehmere Arbeitsoberfläche im Alltag. Das Plugin ist die verlässliche Admin-Zentrale, die im Zweifel immer alle Inhalte sehen und bearbeiten kann.
 
+Für Übekategorien gilt dabei: Das Plugin hält nur die Startvorgabe für neue Lehrkräfte bereit. Die konkrete Kategorienliste wird anschließend pro Lehrkraft in der Lehrkräfte-App gepflegt und auch nur in diesem Lehrkraft-Kontext synchronisiert.
+
 Neu im Admin-Überblick:
 
 - Startseite mit Server-/Sync-Überblick

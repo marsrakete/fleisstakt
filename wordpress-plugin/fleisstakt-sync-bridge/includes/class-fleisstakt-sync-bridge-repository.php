@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class FleissTakt_Sync_Bridge_Repository {
   public const SETTINGS_OPTION = 'fleisstakt_sync_bridge_settings';
-  public const DEFAULT_PRACTICE_CATEGORIES = ['Technik', 'Stück', 'Tonleiter', 'Freies Spiel'];
+public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckentempo', 'Raupe', 'Übarten', 'Hör dir gut zu', 'Schwere Stellen üben', 'Theorie', 'Wiederholungen'];
   private const DEFAULT_FEEDBACK_MIN_RESULTS = 5;
   private const DEFAULT_FEEDBACK_INTRO = 'Deine Antworten sind anonym. Die Lehrkraft sieht keine einzelnen Antworten, sondern nur die gemeinsame Auswertung.';
   private const DEFAULT_FEEDBACK_QUESTIONS = [
@@ -63,6 +63,7 @@ class FleissTakt_Sync_Bridge_Repository {
       wp_user_id BIGINT UNSIGNED NULL,
       display_name VARCHAR(128) NOT NULL,
       email VARCHAR(190) NOT NULL DEFAULT '',
+      practice_categories LONGTEXT NULL,
       api_key VARCHAR(64) NOT NULL,
       status VARCHAR(20) NOT NULL DEFAULT 'active',
       created_at DATETIME NOT NULL,
@@ -279,8 +280,12 @@ class FleissTakt_Sync_Bridge_Repository {
       'sync_base_url' => trailingslashit(site_url('wp-json/fleisstakt-sync/v1')),
       'site_label' => get_bloginfo('name'),
       'learner_app_url' => 'https://marsrakete.github.io/fleisstakt/',
-      'practice_categories' => self::DEFAULT_PRACTICE_CATEGORIES,
+      'default_practice_categories' => self::DEFAULT_PRACTICE_CATEGORIES,
     ];
+
+    if (!isset($settings['default_practice_categories']) && isset($settings['practice_categories'])) {
+      $settings['default_practice_categories'] = $settings['practice_categories'];
+    }
 
     update_option(self::SETTINGS_OPTION, array_merge($defaults, $settings));
   }
@@ -290,21 +295,32 @@ class FleissTakt_Sync_Bridge_Repository {
     if (!is_array($settings)) {
       return [];
     }
-    $settings['practice_categories'] = $this->normalize_practice_categories($settings['practice_categories'] ?? self::DEFAULT_PRACTICE_CATEGORIES);
+    $settings['default_practice_categories'] = $this->normalize_practice_categories(
+      $settings['default_practice_categories'] ?? $settings['practice_categories'] ?? self::DEFAULT_PRACTICE_CATEGORIES
+    );
     return $settings;
   }
 
   public function update_settings(array $settings): void {
     $current = $this->get_settings();
-    if (array_key_exists('practice_categories', $settings)) {
-      $settings['practice_categories'] = $this->normalize_practice_categories($settings['practice_categories']);
+    if (array_key_exists('default_practice_categories', $settings)) {
+      $settings['default_practice_categories'] = $this->normalize_practice_categories($settings['default_practice_categories']);
     }
     $next = array_merge($current, $settings);
     update_option(self::SETTINGS_OPTION, $next);
   }
 
-  public function get_practice_categories(): array {
-    return $this->normalize_practice_categories($this->get_settings()['practice_categories'] ?? self::DEFAULT_PRACTICE_CATEGORIES);
+  public function get_default_practice_categories(): array {
+    return $this->normalize_practice_categories($this->get_settings()['default_practice_categories'] ?? self::DEFAULT_PRACTICE_CATEGORIES);
+  }
+
+  public function get_teacher_practice_categories($teacher): array {
+    if (is_numeric($teacher)) {
+      $teacher = $this->get_teacher((int) $teacher) ?? [];
+    }
+
+    $categories = $this->normalize_practice_categories($teacher['practice_categories'] ?? []);
+    return $categories ?: $this->get_default_practice_categories();
   }
 
   public function export_backup_payload(): array {
@@ -379,8 +395,11 @@ class FleissTakt_Sync_Bridge_Repository {
       $this->wpdb->query("DELETE FROM {$this->teachers_table}");
 
       foreach ($data['teachers'] as $row) {
+        if (!array_key_exists('practice_categories', $row)) {
+          $row['practice_categories'] = implode("\n", $this->get_default_practice_categories());
+        }
         $this->insert_backup_row($this->teachers_table, $row, [
-          '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s',
+          '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
         ]);
       }
 
@@ -463,12 +482,13 @@ class FleissTakt_Sync_Bridge_Repository {
         'wp_user_id' => !empty($data['wp_user_id']) ? (int) $data['wp_user_id'] : null,
         'display_name' => $data['display_name'],
         'email' => $data['email'] ?? '',
+        'practice_categories' => implode("\n", $this->normalize_practice_categories($data['practice_categories'] ?? $this->get_default_practice_categories())),
         'api_key' => $data['api_key'] ?: $this->generate_token('teacher'),
         'status' => $data['status'] ?? 'active',
         'created_at' => $now,
         'updated_at' => $now,
       ],
-      ['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s']
+      ['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
     );
   }
 
@@ -483,12 +503,13 @@ class FleissTakt_Sync_Bridge_Repository {
       [
         'display_name' => $data['display_name'],
         'email' => $data['email'] ?? '',
+        'practice_categories' => implode("\n", $this->normalize_practice_categories($data['practice_categories'] ?? ($existing['practice_categories'] ?? $this->get_default_practice_categories()))),
         'status' => $data['status'] ?? 'active',
         'api_key' => !empty($data['regenerate_api_key']) ? $this->generate_token('teacher') : $existing['api_key'],
         'updated_at' => current_time('mysql', true),
       ],
       ['id' => $id],
-      ['%s', '%s', '%s', '%s', '%s'],
+      ['%s', '%s', '%s', '%s', '%s', '%s'],
       ['%d']
     );
   }
@@ -1115,13 +1136,20 @@ class FleissTakt_Sync_Bridge_Repository {
       $teacher_id = (int) $teacher['id'];
       $classes = is_array($payload['classes'] ?? null) ? $payload['classes'] : [];
       $students = is_array($payload['students'] ?? null) ? $payload['students'] : [];
-      $categories = $this->normalize_practice_categories($payload['categories'] ?? self::DEFAULT_PRACTICE_CATEGORIES);
+      $categories = $this->normalize_practice_categories($payload['categories'] ?? $this->get_teacher_practice_categories($teacher));
       $class_uuid_to_id = [];
       $incoming_profile_ids = [];
 
-      $this->update_settings([
-        'practice_categories' => $categories,
-      ]);
+      $this->wpdb->update(
+        $this->teachers_table,
+        [
+          'practice_categories' => implode("\n", $categories),
+          'updated_at' => current_time('mysql', true),
+        ],
+        ['id' => $teacher_id],
+        ['%s', '%s'],
+        ['%d']
+      );
 
       foreach ($classes as $class) {
         if (!is_array($class)) {
@@ -1924,6 +1952,7 @@ class FleissTakt_Sync_Bridge_Repository {
       'profileLabel' => $profile['profile_label'],
       'classId' => $profile['class_uuid'] ?? '',
       'className' => $profile['class_name'] ?? '',
+      'practiceCategories' => $this->get_practice_categories_for_profile($profile),
     ];
 
     return [
@@ -1938,7 +1967,7 @@ class FleissTakt_Sync_Bridge_Repository {
     $awards = $this->list_manual_awards_for_profile((int) ($profile['id'] ?? 0));
     $cards = $this->merge_cards_with_awards($cards, $awards);
     $manual_awards_count = count(array_filter($awards, static fn(array $award): bool => ($award['status'] ?? '') === 'active'));
-    $categories = $this->get_practice_categories();
+    $categories = $this->get_practice_categories_for_profile($profile);
 
     return [
       'profile' => $package,
@@ -2111,7 +2140,7 @@ class FleissTakt_Sync_Bridge_Repository {
     }
 
     $cards = $this->list_cards_for_teacher($teacher_id);
-    $categories = $this->get_practice_categories();
+    $categories = $this->get_teacher_practice_categories($teacher);
 
     return [
       'teacher' => [
@@ -2162,6 +2191,15 @@ class FleissTakt_Sync_Bridge_Repository {
       'statusLine' => 'Synchronisiert mit dem FleißTakt-Server.',
       'fetchedAt' => gmdate('c'),
     ];
+  }
+
+  private function get_practice_categories_for_profile(array $profile): array {
+    $teacher_id = $this->get_primary_teacher_id_for_profile((int) ($profile['id'] ?? 0));
+    if ($teacher_id > 0) {
+      return $this->get_teacher_practice_categories($teacher_id);
+    }
+
+    return $this->get_default_practice_categories();
   }
 
   private function get_latest_reports_for_profiles(array $profile_ids): array {

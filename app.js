@@ -16,7 +16,7 @@ const navItems = [
 ];
 
 const instruments = ["Klavier", "Violine", "Gitarre", "Cello"];
-const defaultPracticeCategories = ["Technik", "Stück", "Tonleiter", "Freies Spiel"];
+const defaultPracticeCategories = ["Hände getrennt üben", "Schneckentempo", "Raupe", "Übarten", "Hör dir gut zu", "Schwere Stellen üben", "Theorie", "Wiederholungen"];
 const cardRuleTypes = [
   "none",
   "streakAtLeast",
@@ -1534,6 +1534,11 @@ function stopQrScanner() {
   window.clearTimeout(scannerRetryHandle);
   qrScannerFrameHandle = 0;
   scannerRetryHandle = 0;
+  const video = document.querySelector("#connect-qr-video");
+  if (video) {
+    video.pause?.();
+    video.srcObject = null;
+  }
   if (qrScannerStream) {
     qrScannerStream.getTracks().forEach((track) => track.stop());
     qrScannerStream = null;
@@ -1556,6 +1561,32 @@ async function handleScannedConnectionPayload(rawValue) {
   const connection = applyConnectionCandidate(candidate);
   closeScannerDialog();
   return connectProfileFlow(connection.studentId, connection.connectCode);
+}
+
+async function attachQrScannerStreamToVideo() {
+  if (!qrScannerStream || !state.scannerOpen) {
+    return null;
+  }
+
+  const video = document.querySelector("#connect-qr-video");
+  if (!video) {
+    return null;
+  }
+
+  video.muted = true;
+  video.defaultMuted = true;
+  video.autoplay = true;
+  video.setAttribute("muted", "true");
+  video.setAttribute("autoplay", "true");
+  video.setAttribute("playsinline", "true");
+  video.setAttribute("webkit-playsinline", "true");
+
+  if (video.srcObject !== qrScannerStream) {
+    video.srcObject = qrScannerStream;
+  }
+
+  await video.play().catch(() => {});
+  return video;
 }
 
 async function scanConnectionImageFile(file) {
@@ -1597,17 +1628,18 @@ async function startQrScanner() {
   qrScannerStream = stream;
   render();
 
-  const video = document.querySelector("#connect-qr-video");
+  let video = await attachQrScannerStreamToVideo();
   if (!video) {
     return;
   }
 
-  video.srcObject = stream;
-  video.setAttribute("playsinline", "true");
-  await video.play().catch(() => {});
   state.scannerState = "active";
   state.scannerMessage = "Halte den QR-Code aus der Lehrkräfte-App in den markierten Bereich.";
   render();
+  video = await attachQrScannerStreamToVideo();
+  if (!video) {
+    return;
+  }
 
   const tick = async () => {
     if (qrScanAbort || !state.scannerOpen) {
@@ -3303,6 +3335,12 @@ function bindEvents() {
           state.scannerMessage = error?.message || "Kamera konnte nicht gestartet werden.";
           render();
         });
+      });
+    }
+
+    if (state.scannerOpen && qrScannerStream) {
+      window.requestAnimationFrame(() => {
+        void attachQrScannerStreamToVideo();
       });
     }
 
