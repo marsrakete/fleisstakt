@@ -1,6 +1,6 @@
 # FleißTakt
 
-![FleißTakt Icon](./icons/icon-512.png)
+<img src="./icons/logo-readme.png" alt="FleißTakt Logo" width="240" />
 
 FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App hilft dabei, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden. Dazu kommen eine eigene Lehrkräfte-App und ein WordPress-Plugin als gemeinsame Zentrale.
 
