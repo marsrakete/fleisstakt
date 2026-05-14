@@ -25,6 +25,18 @@ class FleissTakt_Sync_Bridge_Rest {
       'permission_callback' => '__return_true',
     ]);
 
+    register_rest_route('fleisstakt-sync/v1', '/student-backup/save', [
+      'methods' => WP_REST_Server::CREATABLE,
+      'callback' => [$this, 'save_student_backup'],
+      'permission_callback' => '__return_true',
+    ]);
+
+    register_rest_route('fleisstakt-sync/v1', '/student-backup/latest', [
+      'methods' => WP_REST_Server::READABLE,
+      'callback' => [$this, 'latest_student_backup'],
+      'permission_callback' => '__return_true',
+    ]);
+
     register_rest_route('fleisstakt-sync/v1', '/connect-profile', [
       'methods' => WP_REST_Server::CREATABLE,
       'callback' => [$this, 'connect_profile'],
@@ -162,6 +174,73 @@ class FleissTakt_Sync_Bridge_Rest {
     return $this->with_no_cache_headers(new WP_REST_Response([
       'ok' => true,
       'snapshot' => $this->repository->get_student_sync_snapshot($profile),
+    ], 200));
+  }
+
+  public function save_student_backup(WP_REST_Request $request): WP_REST_Response {
+    $content_type = (string) $request->get_header('content-type');
+    if (stripos($content_type, 'application/json') === false) {
+      return $this->error_response('Nur application/json ist erlaubt.', 415);
+    }
+
+    $upload_token = sanitize_text_field((string) $request->get_header('x-fleisstakt-upload-token'));
+    if (!$upload_token) {
+      return $this->error_response('Upload-Token fehlt.', 401);
+    }
+
+    $profile = $this->repository->get_profile_by_upload_token($upload_token);
+    if (!$profile) {
+      return $this->error_response('Ungültiges Upload-Token.', 403);
+    }
+
+    $payload = $request->get_json_params();
+    if (!is_array($payload)) {
+      return $this->error_response('Ungültiges Backup.', 400);
+    }
+
+    try {
+      $stored = $this->repository->store_student_backup($payload, $profile);
+    } catch (InvalidArgumentException $exception) {
+      $message = match ($exception->getMessage()) {
+        'ungueltiges-backup' => 'Ungültiges Backup.',
+        'ungueltige-pruefsumme' => 'Prüfsumme ungültig.',
+        'profil-passt-nicht' => 'Backup gehört nicht zu diesem Profil.',
+        default => 'Server-Backup konnte nicht geprüft werden.',
+      };
+
+      return $this->error_response($message, $exception->getMessage() === 'profil-passt-nicht' ? 409 : 400);
+    } catch (Throwable $exception) {
+      return $this->error_response('Server-Backup konnte nicht gespeichert werden.', 500);
+    }
+
+    return new WP_REST_Response([
+      'ok' => true,
+      'status' => $stored['duplicate'] ? 'duplicate_ignored' : 'created',
+      'backupUuid' => $stored['backup_uuid'],
+      'studentId' => $profile['app_student_id'],
+      'savedAt' => $stored['saved_at'],
+    ], $stored['duplicate'] ? 200 : 201);
+  }
+
+  public function latest_student_backup(WP_REST_Request $request): WP_REST_Response {
+    $upload_token = sanitize_text_field((string) $request->get_header('x-fleisstakt-upload-token'));
+    if (!$upload_token) {
+      return $this->error_response('Upload-Token fehlt.', 401);
+    }
+
+    $profile = $this->repository->get_profile_by_upload_token($upload_token);
+    if (!$profile) {
+      return $this->error_response('Ungültiges Upload-Token.', 403);
+    }
+
+    $backup = $this->repository->get_latest_student_backup($profile);
+    if (!$backup) {
+      return $this->with_no_cache_headers($this->error_response('Noch kein Server-Backup vorhanden.', 404));
+    }
+
+    return $this->with_no_cache_headers(new WP_REST_Response([
+      'ok' => true,
+      'backup' => $backup,
     ], 200));
   }
 

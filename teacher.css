@@ -56,6 +56,8 @@ button {
   padding: 18px;
   display: grid;
   gap: 16px;
+  position: relative;
+  overflow: hidden;
 }
 
 .teacher-topbar {
@@ -99,6 +101,45 @@ button {
   align-items: center;
   gap: 10px 14px;
   margin-top: 2px;
+}
+
+.teacher-title-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(110, 72, 24, 0.18);
+  flex: 0 0 auto;
+}
+
+.ambient-flight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  overflow: hidden;
+}
+
+.ambient-flight-note,
+.ambient-flight-bee {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  display: inline-block;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 8px 16px rgba(24, 34, 47, 0.16));
+}
+
+.ambient-flight-note {
+  font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+  animation: ambient-note-flight var(--ambient-duration) ease-in-out forwards;
+  animation-delay: var(--ambient-note-delay);
+}
+
+.ambient-flight-bee {
+  font-size: clamp(1.8rem, 3.8vw, 2.45rem);
+  animation: ambient-bee-flight var(--ambient-duration) cubic-bezier(0.32, 0.88, 0.42, 1) forwards;
+  animation-delay: var(--ambient-bee-delay);
 }
 
 .teacher-actions {
@@ -1281,6 +1322,60 @@ select {
   background: #1f2a36;
   color: #fffaf3;
   box-shadow: 0 18px 28px rgba(31, 42, 54, 0.22);
+}
+
+@keyframes ambient-note-flight {
+  0% {
+    opacity: 0;
+    transform: translate(var(--ambient-start-x), var(--ambient-start-y)) rotate(var(--ambient-note-rotate-start)) scale(0.8);
+  }
+  10% {
+    opacity: 1;
+  }
+  42% {
+    opacity: 1;
+    transform: translate(var(--ambient-mid-x), var(--ambient-mid-y)) rotate(var(--ambient-note-rotate-mid)) scale(1);
+  }
+  54% {
+    transform: translate(calc(var(--ambient-stick-x) - var(--ambient-loop-radius-x)), calc(var(--ambient-stick-y) - var(--ambient-loop-radius-y))) rotate(calc(var(--ambient-note-rotate-mid) - 6deg)) scale(0.98);
+  }
+  60% {
+    transform: translate(calc(var(--ambient-stick-x) + var(--ambient-loop-radius-x)), calc(var(--ambient-stick-y) + var(--ambient-loop-radius-y))) rotate(calc(var(--ambient-note-rotate-mid) + 8deg)) scale(1.03);
+  }
+  68% {
+    transform: translate(calc(var(--ambient-stick-x) + var(--ambient-repel-x)), calc(var(--ambient-stick-y) + var(--ambient-repel-y))) rotate(calc(var(--ambient-note-rotate-mid) - 4deg)) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--ambient-end-x), var(--ambient-end-y)) rotate(var(--ambient-note-rotate-end)) scale(0.82);
+  }
+}
+
+@keyframes ambient-bee-flight {
+  0% {
+    opacity: 0;
+    transform: translate(calc(var(--ambient-start-x) - 22px), calc(var(--ambient-start-y) + 12px)) rotate(var(--ambient-bee-rotate-start)) scale(0.72);
+  }
+  12% {
+    opacity: 1;
+  }
+  44% {
+    opacity: 1;
+    transform: translate(calc(var(--ambient-mid-x) - 18px), calc(var(--ambient-mid-y) + 16px)) rotate(var(--ambient-bee-rotate-mid)) scale(1);
+  }
+  52% {
+    transform: translate(calc(var(--ambient-stick-x) - 24px), calc(var(--ambient-stick-y) + 12px)) rotate(calc(var(--ambient-bee-rotate-mid) - 10deg)) scale(0.98);
+  }
+  58% {
+    transform: translate(calc(var(--ambient-stick-x) + 4px), calc(var(--ambient-stick-y) + 18px)) rotate(calc(var(--ambient-bee-rotate-mid) + 14deg)) scale(1.04);
+  }
+  66% {
+    transform: translate(calc(var(--ambient-stick-x) + var(--ambient-repel-x) - 10px), calc(var(--ambient-stick-y) + var(--ambient-repel-y) + 10px)) rotate(calc(var(--ambient-bee-rotate-mid) - 8deg)) scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--ambient-end-x) - 18px), calc(var(--ambient-end-y) + 14px)) rotate(var(--ambient-bee-rotate-end)) scale(0.74);
+  }
 }
 
 @media (max-width: 1240px) {

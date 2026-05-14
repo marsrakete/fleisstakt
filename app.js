@@ -33,6 +33,20 @@ const cardRuleTypes = [
 ];
 const accentFallbacks = ["apricot", "gold", "sky", "mint"];
 const defaultEntries = [];
+const TIMER_EXTENSION_MINUTES = 2;
+const TIMER_TEST_DURATION_MS = 10000;
+
+function createEmptyTimerSession() {
+  return {
+    status: "idle",
+    totalMinutes: 0,
+    committedMinutes: 0,
+    remainingMs: 0,
+    endsAt: "",
+    completedAt: "",
+    notifiedAt: "",
+  };
+}
 
 const state = {
   activeScreen: "today",
@@ -64,7 +78,12 @@ const state = {
   feedbackStatus: "idle",
   feedbackError: "",
   profilePanel: "profil",
+  selectedStudentCardId: "",
   goal: 15,
+  timerMinutes: 16,
+  timerSession: createEmptyTimerSession(),
+  timerVibrationEnabled: true,
+  timerToneEnabled: true,
   installPrompt: null,
   installReady: false,
   prefersDesktopActions: window.matchMedia("(pointer:fine)").matches,
@@ -107,6 +126,17 @@ let studentSyncInProgress = false;
 let studentAutoSyncPending = false;
 let introFlight = null;
 let introFlightTimeout = 0;
+let ambientFlight = [];
+let ambientFlightTimeout = 0;
+let ambientFlightClearTimeout = 0;
+let ambientFlightBootstrapped = false;
+let ambientFlightInteractionBound = false;
+let timerTickHandle = 0;
+let timerAudioContext = null;
+let timerAudioUnlocked = false;
+const AMBIENT_FLIGHT_FIRST_DELAY_RANGE = [45000, 85000];
+const AMBIENT_FLIGHT_DELAY_RANGE = [150000, 260000];
+const AMBIENT_FLIGHT_DURATION_RANGE = [540, 2000];
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
@@ -133,6 +163,20 @@ applyModalScrollLock();
 applyReloadStatusFromUrl();
 applyConnectionFromUrl();
 registerServiceWorker();
+bootstrapAmbientFlight();
+syncTimerSessionState();
+syncTimerTicking();
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    return;
+  }
+
+  const didComplete = syncTimerSessionState();
+  syncTimerTicking();
+  if (didComplete || state.timerSession.status !== "idle") {
+    render();
+  }
+});
 logQrScannerDebug("app-loaded", {
   version: typeof globalThis.APP_VERSION_INFO === "object" ? globalThis.APP_VERSION_INFO.appVersion : "",
   secureContext: window.isSecureContext,
@@ -203,6 +247,707 @@ function launchIntroFlight(variant = "start") {
     introFlight = null;
     render();
   }, introFlight.durationMs + introFlight.beeDelayMs + 260);
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function normalizeTimerSession(raw) {
+  const base = createEmptyTimerSession();
+  if (!raw || typeof raw !== "object") {
+    return base;
+  }
+
+  const normalized = {
+    status: ["idle", "running", "paused", "completed"].includes(raw.status) ? raw.status : "idle",
+    totalMinutes: Math.max(0, Number(raw.totalMinutes) || 0),
+    committedMinutes: Math.max(0, Number(raw.committedMinutes) || 0),
+    remainingMs: Math.max(0, Number(raw.remainingMs) || 0),
+    endsAt: `${raw.endsAt || ""}`,
+    completedAt: `${raw.completedAt || ""}`,
+    notifiedAt: `${raw.notifiedAt || ""}`,
+  };
+
+  if (normalized.status === "running" && !normalized.endsAt) {
+    return base;
+  }
+
+  if (normalized.status === "idle") {
+    return base;
+  }
+
+  return normalized;
+}
+
+function getTimerRemainingMs(session = state.timerSession) {
+  if (!session || session.status === "idle" || session.status === "completed") {
+    return 0;
+  }
+
+  if (session.status === "paused") {
+    return Math.max(0, Number(session.remainingMs) || 0);
+  }
+
+  return Math.max(0, new Date(session.endsAt).getTime() - Date.now());
+}
+
+function formatTimerClock(milliseconds) {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getTimerViewModel() {
+  const session = normalizeTimerSession(state.timerSession);
+  const remainingMs = getTimerRemainingMs(session);
+  const totalMinutes = Math.max(session.totalMinutes || state.timerMinutes || 0, 0);
+
+  return {
+    ...session,
+    totalMinutes,
+    remainingMs,
+    clock: formatTimerClock(remainingMs),
+    isIdle: session.status === "idle",
+    isRunning: session.status === "running",
+    isPaused: session.status === "paused",
+    isCompleted: session.status === "completed",
+  };
+}
+
+function updateTimerClockDom() {
+  const timer = getTimerViewModel();
+  const clockElement = document.querySelector("#practice-timer-clock");
+  if (clockElement) {
+    clockElement.textContent = timer.clock;
+  }
+}
+
+function isAppleMobileDevice() {
+  const ua = `${navigator.userAgent || ""}`;
+  return /iPhone|iPad|iPod/i.test(ua);
+}
+
+function isAndroidDevice() {
+  const ua = `${navigator.userAgent || ""}`;
+  return /Android/i.test(ua);
+}
+
+function isRunningStandalonePwa() {
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)")?.matches
+    || window.navigator.standalone === true,
+  );
+}
+
+function canUseTimerNotifications() {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+function canUseTimerVibration() {
+  return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+}
+
+function canOfferTimerTone() {
+  return typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window);
+}
+
+function getTimerNotificationPermission() {
+  if (!canUseTimerNotifications()) {
+    return "unsupported";
+  }
+
+  return `${Notification.permission || "default"}`;
+}
+
+function getTimerNotificationHint() {
+  const permission = getTimerNotificationPermission();
+  const lines = [];
+
+  if (permission === "granted") {
+    lines.push("Erinnerung mit Mitteilung ist aktiv.");
+  } else if (permission === "default" && isAppleMobileDevice() && !isRunningStandalonePwa()) {
+    lines.push("Für Sperrschirm-Erinnerungen bitte zuerst zum Home-Bildschirm hinzufügen.");
+  } else if (permission === "denied") {
+    lines.push("Mitteilungen wurden abgelehnt. Der Timer funktioniert trotzdem in der App weiter.");
+  } else if (permission === "unsupported") {
+    lines.push("Erinnerung mit Mitteilung ist auf diesem Gerät gerade nicht verfügbar.");
+  } else {
+    lines.push("Erinnerung mit Mitteilung ist noch nicht erlaubt.");
+  }
+
+  if (!state.timerVibrationEnabled) {
+    lines.push("Vibration ist in ÜbeBiene ausgeschaltet.");
+  } else if (canUseTimerVibration()) {
+    lines.push(
+      isAndroidDevice()
+        ? "Vibration ist eingeschaltet und klappt auf Android meist besonders zuverlässig."
+        : "Vibration ist eingeschaltet, wenn dein Gerät das unterstützt.",
+    );
+  } else {
+    lines.push("Vibration wird auf diesem Gerät gerade nicht unterstützt.");
+  }
+
+  if (!state.timerToneEnabled) {
+    lines.push("Kurzer Ton ist ausgeschaltet.");
+  } else if (!canOfferTimerTone()) {
+    lines.push("Kurzer Ton wird auf diesem Gerät gerade nicht unterstützt.");
+  } else if (timerAudioUnlocked) {
+    lines.push("Kurzer Ton ist für diese Sitzung aktiviert.");
+  } else {
+    lines.push("Kurzer Ton wird beim Start des Timers für diese Sitzung vorbereitet.");
+  }
+
+  return lines.join(" ");
+}
+
+function shouldOfferTimerNotificationPermission() {
+  if (isAppleMobileDevice() && !isRunningStandalonePwa()) {
+    return false;
+  }
+
+  return getTimerNotificationPermission() === "default";
+}
+
+async function requestTimerNotificationPermission() {
+  if (isAppleMobileDevice() && !isRunningStandalonePwa()) {
+    state.celebrationText = "Bitte zuerst zum Home-Bildschirm hinzufügen. Danach kann ÜbeBiene Mitteilungen anfragen.";
+    state.celebrate = true;
+    render();
+    return "standalone-erforderlich";
+  }
+
+  if (!canUseTimerNotifications()) {
+    state.celebrationText = "Mitteilungen sind auf diesem Gerät gerade nicht verfügbar.";
+    state.celebrate = true;
+    render();
+    return "unsupported";
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      state.celebrationText = "Mitteilungen sind jetzt erlaubt. ÜbeBiene darf dich an den Timer erinnern.";
+      state.celebrate = true;
+    } else if (permission === "denied") {
+      state.celebrationText = "Mitteilungen wurden abgelehnt. Der Timer funktioniert trotzdem in der App.";
+      state.celebrate = true;
+    }
+    render();
+    return permission;
+  } catch {
+    state.celebrationText = "Mitteilungen konnten gerade nicht aktiviert werden.";
+    state.celebrate = true;
+    render();
+    return "error";
+  }
+}
+
+async function unlockTimerAudio() {
+  if (!state.timerToneEnabled || !canOfferTimerTone()) {
+    return false;
+  }
+
+  try {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      return false;
+    }
+
+    if (!timerAudioContext) {
+      timerAudioContext = new AudioContextCtor();
+    }
+
+    if (timerAudioContext.state === "suspended") {
+      await timerAudioContext.resume();
+    }
+
+    const oscillator = timerAudioContext.createOscillator();
+    const gainNode = timerAudioContext.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = 880;
+    gainNode.gain.value = 0.0001;
+    oscillator.connect(gainNode);
+    gainNode.connect(timerAudioContext.destination);
+    const now = timerAudioContext.currentTime;
+    oscillator.start(now);
+    oscillator.stop(now + 0.02);
+    timerAudioUnlocked = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function vibrateTimerCompletion() {
+  if (!state.timerVibrationEnabled || !canUseTimerVibration()) {
+    return false;
+  }
+
+  try {
+    return navigator.vibrate([160, 110, 220]);
+  } catch {
+    return false;
+  }
+}
+
+function playTimerCompletionTone() {
+  if (!state.timerToneEnabled || !timerAudioUnlocked || !timerAudioContext) {
+    return false;
+  }
+
+  try {
+    if (timerAudioContext.state === "suspended") {
+      void timerAudioContext.resume().catch(() => {});
+    }
+    const oscillator = timerAudioContext.createOscillator();
+    const gainNode = timerAudioContext.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(784, timerAudioContext.currentTime);
+    oscillator.frequency.linearRampToValueAtTime(1046, timerAudioContext.currentTime + 0.16);
+    gainNode.gain.setValueAtTime(0.0001, timerAudioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.08, timerAudioContext.currentTime + 0.02);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, timerAudioContext.currentTime + 0.34);
+    oscillator.connect(gainNode);
+    gainNode.connect(timerAudioContext.destination);
+    oscillator.start();
+    oscillator.stop(timerAudioContext.currentTime + 0.36);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function notifyTimerCompleted() {
+  const permission = getTimerNotificationPermission();
+  if (permission !== "granted") {
+    return false;
+  }
+
+  const totalMinutes = Math.max(2, Number(state.timerSession.totalMinutes) || Number(state.timerMinutes) || 0);
+  const title = "ÜbeBiene";
+  const body = `Dein ${totalMinutes}-Minuten-Block ist vorbei. Magst du ihn jetzt eintragen?`;
+
+  try {
+    if (serviceWorkerRegistration?.showNotification) {
+      await serviceWorkerRegistration.showNotification(title, {
+        body,
+        tag: "uebebiene-timer-complete",
+        renotify: true,
+        badge: "./icons/icon-192.png",
+        icon: "./icons/icon-192.png",
+      });
+    } else {
+      const notification = new Notification(title, {
+        body,
+        tag: "uebebiene-timer-complete",
+        icon: "./icons/icon-192.png",
+      });
+      window.setTimeout(() => notification.close(), 12000);
+    }
+
+    state.timerSession = {
+      ...state.timerSession,
+      notifiedAt: new Date().toISOString(),
+    };
+    persistState();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function syncTimerTicking() {
+  window.clearInterval(timerTickHandle);
+  timerTickHandle = 0;
+
+  if (state.timerSession.status !== "running") {
+    return;
+  }
+
+  timerTickHandle = window.setInterval(() => {
+    const didComplete = syncTimerSessionState();
+    if (didComplete) {
+      render();
+      return;
+    }
+
+    if (state.activeScreen === "today") {
+      updateTimerClockDom();
+    }
+  }, 250);
+}
+
+function syncTimerSessionState() {
+  if (state.timerSession.status !== "running") {
+    return false;
+  }
+
+  const remainingMs = getTimerRemainingMs(state.timerSession);
+  if (remainingMs > 0) {
+    return false;
+  }
+
+  state.timerSession = {
+    ...state.timerSession,
+    status: "completed",
+    remainingMs: 0,
+    endsAt: "",
+    completedAt: new Date().toISOString(),
+    committedMinutes: Math.max(
+      Number(state.timerSession.committedMinutes) || 0,
+      Number(state.timerSession.totalMinutes) || 0,
+    ),
+    notifiedAt: "",
+  };
+  state.celebrationText = "Geschafft. Dein Übe-Block ist fertig.";
+  state.celebrate = true;
+  persistState();
+  vibrateTimerCompletion();
+  playTimerCompletionTone();
+  void notifyTimerCompleted();
+  syncTimerTicking();
+  return true;
+}
+
+function clearTimerCompletionToast() {
+  if (state.celebrationText === "Geschafft. Dein Übe-Block ist fertig.") {
+    state.celebrate = false;
+  }
+}
+
+function startTimerSession(minutes, options = {}) {
+  const { durationMs = 0 } = options;
+  const totalMinutes = Math.max(2, Number(minutes) || 0);
+  const effectiveDurationMs = Math.max(1000, Number(durationMs) || totalMinutes * 60000);
+  state.timerSession = {
+    status: "running",
+    totalMinutes,
+    committedMinutes: 0,
+    remainingMs: effectiveDurationMs,
+    endsAt: new Date(Date.now() + effectiveDurationMs).toISOString(),
+    completedAt: "",
+    notifiedAt: "",
+  };
+  void unlockTimerAudio();
+  persistState();
+  syncTimerTicking();
+}
+
+function pauseTimerSession() {
+  if (state.timerSession.status !== "running") {
+    return;
+  }
+
+  state.timerSession = {
+    ...state.timerSession,
+    status: "paused",
+    remainingMs: getTimerRemainingMs(state.timerSession),
+    endsAt: "",
+  };
+  persistState();
+  syncTimerTicking();
+}
+
+function resumeTimerSession() {
+  if (state.timerSession.status !== "paused") {
+    return;
+  }
+
+  const remainingMs = Math.max(1000, Number(state.timerSession.remainingMs) || 0);
+  state.timerSession = {
+    ...state.timerSession,
+    status: "running",
+    remainingMs,
+    endsAt: new Date(Date.now() + remainingMs).toISOString(),
+  };
+  persistState();
+  syncTimerTicking();
+}
+
+function extendTimerSession(minutes = TIMER_EXTENSION_MINUTES) {
+  const extraMinutes = Math.max(1, Number(minutes) || TIMER_EXTENSION_MINUTES);
+  const extraMs = extraMinutes * 60000;
+  const baseMinutes = Math.max(0, Number(state.timerSession.totalMinutes) || 0);
+  const committedMinutes = Math.max(
+    Number(state.timerSession.committedMinutes) || 0,
+    baseMinutes,
+  );
+  state.timerSession = {
+    status: "running",
+    totalMinutes: baseMinutes + extraMinutes,
+    committedMinutes,
+    remainingMs: extraMs,
+    endsAt: new Date(Date.now() + extraMs).toISOString(),
+    completedAt: "",
+    notifiedAt: "",
+  };
+  persistState();
+  syncTimerTicking();
+}
+
+function clearTimerSession() {
+  state.timerSession = createEmptyTimerSession();
+  persistState();
+  syncTimerTicking();
+}
+
+function getTimerReachedWholeMinutes(session = state.timerSession) {
+  const normalized = normalizeTimerSession(session);
+  const totalMinutes = Math.max(0, Number(normalized.totalMinutes) || 0);
+  const committedMinutes = Math.max(0, Number(normalized.committedMinutes) || 0);
+
+  if (normalized.status === "completed") {
+    return Math.max(committedMinutes, totalMinutes);
+  }
+
+  const remainingMs = getTimerRemainingMs(normalized);
+  const segmentMinutes = Math.max(0, totalMinutes - committedMinutes);
+  const segmentDurationMs = segmentMinutes * 60000;
+  const elapsedSegmentMs = Math.max(0, segmentDurationMs - remainingMs);
+  const reachedSegmentMinutes = Math.floor(elapsedSegmentMs / 60000);
+  return Math.max(committedMinutes, committedMinutes + reachedSegmentMinutes);
+}
+
+function stopTimerSession() {
+  const reachedWholeMinutes = getTimerReachedWholeMinutes(state.timerSession);
+  if (reachedWholeMinutes > 0) {
+    state.timerSession = {
+      ...state.timerSession,
+      status: "completed",
+      totalMinutes: reachedWholeMinutes,
+      committedMinutes: reachedWholeMinutes,
+      remainingMs: 0,
+      endsAt: "",
+      completedAt: new Date().toISOString(),
+      notifiedAt: "",
+    };
+    persistState();
+    syncTimerTicking();
+    return;
+  }
+
+  clearTimerSession();
+}
+
+function pickAmbientFlightDelay(range) {
+  return Math.round(randomBetween(range[0], range[1]));
+}
+
+function getAmbientFlightTargets(container) {
+  return [...container.querySelectorAll("button, input, select, textarea, .secondary-action, .ghost-button, .pill, .nav-item")]
+    .filter((element) => {
+      if (!(element instanceof HTMLElement)) {
+        return false;
+      }
+
+      if (element.disabled || element.closest("dialog[open]")) {
+        return false;
+      }
+
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) < 0.2) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 28 && rect.height >= 20;
+    });
+}
+
+function createAmbientFlight() {
+  const container = document.querySelector(".app-frame");
+  if (!(container instanceof HTMLElement)) {
+    return null;
+  }
+
+  const rect = container.getBoundingClientRect();
+  const margin = 44;
+  const direction = ["left-right", "right-left", "top-bottom", "bottom-top"][Math.floor(Math.random() * 4)];
+  const isHorizontal = direction === "left-right" || direction === "right-left";
+  const start = { x: 0, y: 0 };
+  const end = { x: 0, y: 0 };
+
+  if (direction === "left-right") {
+    start.x = -margin;
+    start.y = randomBetween(rect.height * 0.12, rect.height * 0.88);
+    end.x = rect.width + margin;
+    end.y = randomBetween(rect.height * 0.08, rect.height * 0.9);
+  } else if (direction === "right-left") {
+    start.x = rect.width + margin;
+    start.y = randomBetween(rect.height * 0.12, rect.height * 0.88);
+    end.x = -margin;
+    end.y = randomBetween(rect.height * 0.08, rect.height * 0.9);
+  } else if (direction === "top-bottom") {
+    start.x = randomBetween(rect.width * 0.12, rect.width * 0.88);
+    start.y = -margin;
+    end.x = randomBetween(rect.width * 0.08, rect.width * 0.92);
+    end.y = rect.height + margin;
+  } else {
+    start.x = randomBetween(rect.width * 0.12, rect.width * 0.88);
+    start.y = rect.height + margin;
+    end.x = randomBetween(rect.width * 0.08, rect.width * 0.92);
+    end.y = -margin;
+  }
+
+  const availableTargets = getAmbientFlightTargets(container);
+  const shouldStick = availableTargets.length > 0 && Math.random() < 0.55;
+  const target = shouldStick ? availableTargets[Math.floor(Math.random() * availableTargets.length)] : null;
+  const targetRect = target?.getBoundingClientRect();
+  const stickX = targetRect
+    ? targetRect.left - rect.left + (targetRect.width / 2)
+    : randomBetween(rect.width * 0.24, rect.width * 0.76);
+  const stickY = targetRect
+    ? targetRect.top - rect.top + (targetRect.height / 2)
+    : randomBetween(rect.height * 0.18, rect.height * 0.74);
+  const midX = targetRect ? stickX : (start.x + end.x) / 2 + randomBetween(-rect.width * 0.08, rect.width * 0.08);
+  const midY = targetRect ? stickY : (start.y + end.y) / 2 + randomBetween(-rect.height * 0.08, rect.height * 0.08);
+  const repelX = isHorizontal ? (direction === "left-right" ? 34 : -34) : randomBetween(-18, 18);
+  const repelY = isHorizontal ? randomBetween(-18, 18) : (direction === "top-bottom" ? 34 : -34);
+
+  return {
+    id: `ambient-${Date.now()}`,
+    durationMs: Math.round(randomBetween(AMBIENT_FLIGHT_DURATION_RANGE[0], AMBIENT_FLIGHT_DURATION_RANGE[1])),
+    noteDelayMs: Math.round(randomBetween(0, 40)),
+    beeDelayMs: Math.round(randomBetween(30, 90)),
+    startX: `${Math.round(start.x)}px`,
+    startY: `${Math.round(start.y)}px`,
+    midX: `${Math.round(midX)}px`,
+    midY: `${Math.round(midY)}px`,
+    stickX: `${Math.round(stickX)}px`,
+    stickY: `${Math.round(stickY)}px`,
+    endX: `${Math.round(end.x)}px`,
+    endY: `${Math.round(end.y)}px`,
+    noteRotateStart: `${Math.round(randomBetween(-18, 18))}deg`,
+    noteRotateMid: `${Math.round(randomBetween(-30, 30))}deg`,
+    noteRotateEnd: `${Math.round(randomBetween(-20, 20))}deg`,
+    beeRotateStart: `${Math.round(randomBetween(-12, 12))}deg`,
+    beeRotateMid: `${Math.round(randomBetween(-26, 26))}deg`,
+    beeRotateEnd: `${Math.round(randomBetween(-18, 18))}deg`,
+    repelX: `${Math.round(repelX)}px`,
+    repelY: `${Math.round(repelY)}px`,
+    loopRadiusX: `${Math.round(randomBetween(8, 16))}px`,
+    loopRadiusY: `${Math.round(randomBetween(8, 16))}px`,
+    stick: Boolean(targetRect),
+  };
+}
+
+function createAmbientSwarm() {
+  const pairCount = Math.round(randomBetween(5, 10));
+  const flights = [];
+
+  for (let index = 0; index < pairCount; index += 1) {
+    const flight = createAmbientFlight();
+    if (!flight) {
+      continue;
+    }
+
+    const stagger = index * Math.round(randomBetween(45, 120));
+    flights.push({
+      ...flight,
+      id: `${flight.id}-${index}`,
+      durationMs: Math.max(480, flight.durationMs + Math.round(randomBetween(-180, 220))),
+      noteDelayMs: flight.noteDelayMs + stagger,
+      beeDelayMs: flight.beeDelayMs + stagger + Math.round(randomBetween(12, 90)),
+    });
+  }
+
+  return flights;
+}
+
+function dismissAmbientFlight(shouldReschedule = true) {
+  window.clearTimeout(ambientFlightClearTimeout);
+  ambientFlight = [];
+  render();
+  if (shouldReschedule) {
+    scheduleAmbientFlight();
+  }
+}
+
+function scheduleAmbientFlight(useFirstDelay = false) {
+  if (prefersReducedMotion()) {
+    return;
+  }
+
+  window.clearTimeout(ambientFlightTimeout);
+  const delay = pickAmbientFlightDelay(useFirstDelay ? AMBIENT_FLIGHT_FIRST_DELAY_RANGE : AMBIENT_FLIGHT_DELAY_RANGE);
+  ambientFlightTimeout = window.setTimeout(() => {
+    launchAmbientFlight();
+  }, delay);
+}
+
+function launchAmbientFlight(force = false) {
+  if (prefersReducedMotion()) {
+    return;
+  }
+
+  if (document.hidden && !force) {
+    scheduleAmbientFlight();
+    return;
+  }
+
+  const nextFlight = createAmbientSwarm();
+  if (!nextFlight?.length) {
+    scheduleAmbientFlight();
+    return;
+  }
+
+  window.clearTimeout(ambientFlightTimeout);
+  window.clearTimeout(ambientFlightClearTimeout);
+  ambientFlight = nextFlight;
+  render();
+  const totalDuration = Math.max(...nextFlight.map((flight) => flight.durationMs + flight.beeDelayMs)) + 720;
+  ambientFlightClearTimeout = window.setTimeout(() => {
+    dismissAmbientFlight();
+  }, totalDuration);
+}
+
+function bindAmbientFlightInteraction() {
+  if (ambientFlightInteractionBound) {
+    return;
+  }
+
+  ambientFlightInteractionBound = true;
+  const handleInteraction = (event) => {
+    if (event.type === "keydown") {
+      const target = event.target;
+      const isTypingTarget = target instanceof HTMLElement
+        && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (isTypingTarget) {
+        return;
+      }
+    }
+
+    window.clearTimeout(ambientFlightTimeout);
+    if (ambientFlight.length) {
+      dismissAmbientFlight(true);
+      return;
+    }
+    scheduleAmbientFlight();
+  };
+
+  document.addEventListener("pointerdown", handleInteraction, { passive: true });
+  document.addEventListener("keydown", handleInteraction);
+}
+
+function bootstrapAmbientFlight() {
+  if (ambientFlightBootstrapped || prefersReducedMotion()) {
+    return;
+  }
+
+  ambientFlightBootstrapped = true;
+  bindAmbientFlightInteraction();
+  scheduleAmbientFlight(true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      return;
+    }
+
+    if (!ambientFlight.length && !ambientFlightTimeout) {
+      scheduleAmbientFlight();
+    }
+  });
 }
 
 function applyModalScrollLock() {
@@ -1001,6 +1746,11 @@ function hydrateState() {
       || state.profileLibrary[0]
       || legacyProfile,
     );
+    state.timerMinutes = getTimerPresetOptions().includes(Number(parsed.timerMinutes)) ? Number(parsed.timerMinutes) : 16;
+    state.timerSession = normalizeTimerSession(parsed.timerSession);
+    state.timerVibrationEnabled = parsed.timerVibrationEnabled !== false;
+    state.timerToneEnabled = parsed.timerToneEnabled !== false;
+    state.selectedStudentCardId = `${parsed.selectedStudentCardId || ""}`;
     state.profileFormDraft = parsed.profileFormDraft && typeof parsed.profileFormDraft === "object"
       ? parsed.profileFormDraft
       : null;
@@ -1010,6 +1760,7 @@ function hydrateState() {
     state.customCards = [];
     state.activeProfileId = state.studentId;
     state.profileLibrary = [currentProfileSnapshot()];
+    state.timerSession = createEmptyTimerSession();
   }
 }
 
@@ -1026,6 +1777,11 @@ function persistState() {
       profileUuid: state.profileUuid,
       classId: state.classId,
       goal: state.goal,
+      timerMinutes: state.timerMinutes,
+      timerSession: state.timerSession,
+      timerVibrationEnabled: state.timerVibrationEnabled,
+      timerToneEnabled: state.timerToneEnabled,
+      selectedStudentCardId: state.selectedStudentCardId,
       practiceCategories: state.practiceCategories,
       syncBaseUrl: state.syncBaseUrl,
       syncUploadToken: state.syncUploadToken,
@@ -1057,6 +1813,11 @@ function exportBackupPayload() {
       profileUuid: state.profileUuid,
       classId: state.classId,
       goal: state.goal,
+      timerMinutes: state.timerMinutes,
+      timerSession: state.timerSession,
+      timerVibrationEnabled: state.timerVibrationEnabled,
+      timerToneEnabled: state.timerToneEnabled,
+      selectedStudentCardId: state.selectedStudentCardId,
       reportRange: state.reportRange,
       practiceCategories: state.practiceCategories,
       syncBaseUrl: state.syncBaseUrl,
@@ -1086,37 +1847,22 @@ function createBackupFileContent() {
   return JSON.stringify(exportBackupPayload(), null, 2);
 }
 
-async function shareDeviceMoveBackup() {
-  const filename = createBackupFileName();
-  const content = createBackupFileContent();
-  const file = new File([content], filename, { type: "application/json" });
+function applyImportedBackupPayload(payload) {
+  const checksum = payload?.checksum;
+  const backupPayload = payload?.data
+    ? {
+        exportedAt: payload.exportedAt,
+        app: payload.app,
+        version: payload.version,
+        data: payload.data,
+      }
+    : null;
 
-  if (!navigator.share) {
-    throw new Error("teilen-nicht-verfuegbar");
-  }
-
-  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
-    throw new Error("datei-teilen-nicht-verfuegbar");
-  }
-
-  await navigator.share({
-    title: "FleißTakt Gerätewechsel",
-    text: "Diese Datei auf dem neuen Gerät in FleißTakt importieren, damit Lernenden-ID und Verlauf erhalten bleiben.",
-    files: [file],
-  });
-}
-
-async function importBackupFile(file) {
-  const text = await file.text();
-  const parsed = JSON.parse(text);
-  const checksum = parsed?.checksum;
-  const payload = parsed?.data ? { exportedAt: parsed.exportedAt, app: parsed.app, version: parsed.version, data: parsed.data } : null;
-
-  if (!payload || !checksum || createBackupChecksum(payload) !== checksum) {
+  if (!backupPayload || !checksum || createBackupChecksum(backupPayload) !== checksum) {
     throw new Error("ungueltige-pruefsumme");
   }
 
-  const backup = payload.data;
+  const backup = backupPayload.data;
 
   if (!Array.isArray(backup.entries)) {
     throw new Error("ungueltiges-backup");
@@ -1130,6 +1876,11 @@ async function importBackupFile(file) {
   state.profileUuid = backup.profileUuid || "";
   state.classId = backup.classId || "";
   state.goal = Number(backup.goal) || 15;
+  state.timerMinutes = getTimerPresetOptions().includes(Number(backup.timerMinutes)) ? Number(backup.timerMinutes) : 16;
+  state.timerSession = normalizeTimerSession(backup.timerSession);
+  state.timerVibrationEnabled = backup.timerVibrationEnabled !== false;
+  state.timerToneEnabled = backup.timerToneEnabled !== false;
+  state.selectedStudentCardId = `${backup.selectedStudentCardId || ""}`;
   state.reportRange = backup.reportRange || "week";
   state.profileLibrary = Array.isArray(backup.profileLibrary) && backup.profileLibrary.length
     ? backup.profileLibrary.map(normalizeStoredProfile)
@@ -1158,6 +1909,40 @@ async function importBackupFile(file) {
     || state.profileLibrary[0],
   );
   persistState();
+}
+
+function hasMeaningfulLocalBackupData() {
+  return Boolean(
+    state.entries.length
+    || (state.profileName || "").trim()
+    || state.customCards.length
+    || state.profileLibrary.length > 1
+  );
+}
+
+async function shareDeviceMoveBackup() {
+  const filename = createBackupFileName();
+  const content = createBackupFileContent();
+  const file = new File([content], filename, { type: "application/json" });
+
+  if (!navigator.share) {
+    throw new Error("teilen-nicht-verfuegbar");
+  }
+
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+    throw new Error("datei-teilen-nicht-verfuegbar");
+  }
+
+  await navigator.share({
+    title: "FleißTakt Gerätewechsel",
+    text: "Diese Datei auf dem neuen Gerät in FleißTakt importieren, damit Lernenden-ID und Verlauf erhalten bleiben.",
+    files: [file],
+  });
+}
+
+async function importBackupFile(file) {
+  const text = await file.text();
+  applyImportedBackupPayload(JSON.parse(text));
 }
 
 function parseCardPackage(text) {
@@ -1383,6 +2168,50 @@ async function fetchStudentSyncSnapshot() {
     throw new Error(data?.message || "sync-fehlgeschlagen");
   }
   return data.snapshot;
+}
+
+async function saveBackupToServer() {
+  if (!state.syncUploadToken) {
+    throw new Error("fehlendes-upload-token");
+  }
+
+  const payload = exportBackupPayload();
+  const response = await fetch(`${state.syncBaseUrl}/student-backup/save`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-FleissTakt-Upload-Token": state.syncUploadToken,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.message || "server-backup-fehlgeschlagen");
+  }
+  return data;
+}
+
+async function restoreLatestBackupFromServer() {
+  if (!state.syncUploadToken) {
+    throw new Error("fehlendes-upload-token");
+  }
+
+  const response = await fetch(`${state.syncBaseUrl}/student-backup/latest`, {
+    method: "GET",
+    headers: {
+      "X-FleissTakt-Upload-Token": state.syncUploadToken,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok || !data?.backup?.payload) {
+    if (response.status === 404) {
+      throw new Error("kein-server-backup");
+    }
+    throw new Error(data?.message || "server-backup-wiederherstellung-fehlgeschlagen");
+  }
+
+  applyImportedBackupPayload(data.backup.payload);
+  return data.backup;
 }
 
 async function syncStudentAppWithServer() {
@@ -2320,6 +3149,10 @@ function getReportActionLabel() {
   return state.reportRange === "all" ? "Gesamtbericht" : getReportData(state.reportRange).label;
 }
 
+function getTimerPresetOptions() {
+  return Array.from({ length: 11 }, (_, index) => 10 + index * 2);
+}
+
 function getCards(stats) {
   return getActiveCardDefinitions().map((card) => {
     const manuallyAwarded = card.award?.mode === "manual";
@@ -2333,6 +3166,55 @@ function getCards(stats) {
       progressPercent: manuallyAwarded ? 100 : cardProgressPercent(card, stats),
       progressText: manuallyAwarded ? "Direkt von der Lehrkraft verliehen" : cardProgressText(card, stats),
     };
+  });
+}
+
+function getLearnerCardStatusRank(card) {
+  if (card.manuallyAwarded) {
+    return 0;
+  }
+
+  if (card.unlocked) {
+    return 1;
+  }
+
+  if (card.progressPercent >= 70) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function getCardRarityRank(card) {
+  const order = {
+    Spezial: 5,
+    Gold: 4,
+    Silber: 3,
+    Bronze: 2,
+    Basis: 1,
+  };
+
+  return order[card.rarity] || 0;
+}
+
+function sortCardsForLearner(cards) {
+  return [...cards].sort((left, right) => {
+    const statusDelta = getLearnerCardStatusRank(left) - getLearnerCardStatusRank(right);
+    if (statusDelta !== 0) {
+      return statusDelta;
+    }
+
+    const progressDelta = right.progressPercent - left.progressPercent;
+    if (progressDelta !== 0) {
+      return progressDelta;
+    }
+
+    const rarityDelta = getCardRarityRank(right) - getCardRarityRank(left);
+    if (rarityDelta !== 0) {
+      return rarityDelta;
+    }
+
+    return left.title.localeCompare(right.title, "de");
   });
 }
 
@@ -2351,10 +3233,14 @@ function nextCardName(cards) {
 }
 
 function todayScreen() {
+  syncTimerSessionState();
   const stats = getStats();
   const cards = getCards(stats);
   const progress = nextCardProgress(cards);
   const unlockedCount = cards.filter((card) => card.unlocked).length;
+  const timerPresets = getTimerPresetOptions();
+  const timer = getTimerViewModel();
+  const timerNotificationHint = getTimerNotificationHint();
   const hasManagedProfile = Boolean(state.syncUploadToken);
   const heroTitle = hasManagedProfile
     ? "Üben und Kärtchen im Blick."
@@ -2375,6 +3261,90 @@ function todayScreen() {
           <button class="secondary-button" type="button" data-nav="cards">Kärtchen ansehen</button>
         </div>
       </div>
+
+      <section class="timer-card">
+        ${
+          timer.isIdle
+            ? `
+              <div class="timer-card-copy">
+                <p class="label">Dein Übe-Timer</p>
+                <h3>Starte einen Übe-Block.</h3>
+                <p class="timer-rule">Faustregel: Alter mal 2 Minuten.</p>
+              </div>
+
+              <div class="timer-chip-row" aria-label="Zeitwahl für den Übe-Timer">
+                ${timerPresets
+                  .map(
+                    (minutes) => `
+                      <button
+                        class="pill timer-pill ${state.timerMinutes === minutes ? "is-active" : ""}"
+                        type="button"
+                        data-timer-minutes="${minutes}"
+                        aria-pressed="${state.timerMinutes === minutes ? "true" : "false"}"
+                      >
+                        ${minutes} Min
+                      </button>
+                    `,
+                  )
+                  .join("")}
+              </div>
+
+              <div class="timer-card-actions">
+                <button class="secondary-action" type="button" id="start-practice-timer">Übe-Timer starten</button>
+                ${shouldOfferTimerNotificationPermission() ? `<button class="secondary-action" type="button" id="enable-timer-notifications">Erinnerungen erlauben</button>` : ""}
+              </div>
+              <p class="timer-hint">${timerNotificationHint}</p>
+            `
+            : ""
+        }
+        ${
+          timer.isRunning
+            ? `
+              <div class="timer-display">
+                <p class="label">Du übst gerade</p>
+                <strong class="timer-clock" id="practice-timer-clock">${timer.clock}</strong>
+                <p class="timer-status">${timer.totalMinutes}-Minuten-Block</p>
+                <p class="timer-hint">${timerNotificationHint}</p>
+              </div>
+              <div class="timer-card-actions timer-card-actions-split timer-card-actions-divider">
+                <button class="secondary-action" type="button" id="pause-practice-timer">Pausieren</button>
+                <button class="secondary-action timer-stop-button" type="button" id="stop-practice-timer">Beenden</button>
+              </div>
+            `
+            : ""
+        }
+        ${
+          timer.isPaused
+            ? `
+              <div class="timer-display">
+                <p class="label">Pausiert</p>
+                <strong class="timer-clock" id="practice-timer-clock">${timer.clock}</strong>
+                <p class="timer-status">Dein Übe-Block wartet auf dich.</p>
+              </div>
+              <div class="timer-card-actions timer-card-actions-split timer-card-actions-divider">
+                <button class="secondary-action" type="button" id="resume-practice-timer">Weiter üben</button>
+                <button class="secondary-action timer-stop-button" type="button" id="stop-practice-timer">Beenden</button>
+              </div>
+            `
+            : ""
+        }
+        ${
+          timer.isCompleted
+            ? `
+              <div class="timer-display">
+                <p class="label">Geschafft</p>
+                <strong class="timer-clock">${timer.totalMinutes} Min</strong>
+                <p class="timer-status">Dein Übe-Block ist vorbei. Möchtest du ihn jetzt eintragen?</p>
+              </div>
+              <div class="timer-card-actions timer-card-actions-divider">
+                <button class="secondary-action" type="button" id="log-practice-timer">Jetzt eintragen</button>
+                <button class="secondary-action" type="button" id="extend-practice-timer">Noch ${TIMER_EXTENSION_MINUTES} Minuten weiter</button>
+                <button class="secondary-action timer-stop-button" type="button" id="close-practice-timer">Schließen</button>
+              </div>
+            `
+            : ""
+        }
+      </section>
 
       <section class="stats-strip stats-strip-primary">
         <div class="stat-pill">
@@ -2504,7 +3474,7 @@ function logScreen() {
 
 function cardsScreen() {
   const stats = getStats();
-  const cards = getCards(stats);
+  const cards = sortCardsForLearner(getCards(stats));
   const unlockedCount = cards.filter((card) => card.unlocked).length;
   const hasManagedProfile = Boolean(state.syncUploadToken);
   const heading = "Kärtchen";
@@ -2520,19 +3490,20 @@ function cardsScreen() {
     : `Serie ${stats.streak} Tage · ${stats.weekMinutes} Minuten in dieser Woche`;
   const emptyState = hasManagedProfile
     ? `
-      <article class="reward-card accent-sky is-locked">
-        <div class="reward-topline">
-          <p class="reward-state">Noch nichts zugewiesen</p>
-          <span class="reward-rarity">Sync</span>
-        </div>
-        <div class="reward-symbol">◎</div>
-        <div class="reward-copy">
+      <article class="album-chip-card is-empty accent-sky">
+        <div class="album-chip album-chip-static is-locked accent-sky">
+          <span>◎</span>
           <h3>Noch keine Kärtchen</h3>
+        </div>
+        <div class="album-chip-detail is-open">
           <p>Bitte die App mit dem Server synchronisieren oder in der Lehrkräfte-App neue Ziele zuweisen lassen.</p>
-          <p class="reward-progress">Sobald Ziele zugewiesen sind, erscheinen sie hier automatisch.</p>
+          <p class="album-chip-progress">Sobald Ziele zugewiesen sind, erscheinen sie hier automatisch.</p>
         </div>
       </article>
     `
+    : "";
+  const expandedCardId = cards.some((card) => card.id === state.selectedStudentCardId)
+    ? state.selectedStudentCardId
     : "";
 
   return `
@@ -2551,48 +3522,49 @@ function cardsScreen() {
           ${cards
             .map(
               (card) => `
-                <div class="album-chip ${card.unlocked ? "is-unlocked" : "is-locked"} accent-${card.accent}">
-                  <span>${card.symbol}</span>
-                  <strong>${card.title}</strong>
-                </div>
+                <article class="album-chip-card accent-${card.accent} ${expandedCardId === card.id ? "is-expanded" : ""}">
+                  <button
+                    class="album-chip ${card.unlocked ? "is-unlocked" : "is-locked"} accent-${card.accent} ${expandedCardId === card.id ? "is-active" : ""}"
+                    type="button"
+                    data-student-card-id="${escapeHtml(card.id)}"
+                    aria-expanded="${expandedCardId === card.id ? "true" : "false"}"
+                  >
+                    <span>${card.symbol}</span>
+                    <strong>${card.title}</strong>
+                    <small>${card.statusLabel}</small>
+                  </button>
+                  ${
+                    expandedCardId === card.id
+                      ? `
+                        <div class="album-chip-detail is-open">
+                          <div class="album-chip-detail-topline">
+                            <p class="reward-state">${card.statusLabel}</p>
+                            <span class="reward-rarity">${card.rarity}</span>
+                          </div>
+                          <p>${card.description}</p>
+                          <p class="album-chip-progress">${card.progressText}</p>
+                          ${
+                            card.manuallyAwarded
+                              ? `
+                                <div class="reward-award-note">
+                                  <span>Direkt verliehen</span>
+                                  <strong>${card.award?.awardedBy ? `Von ${escapeHtml(card.award.awardedBy)}` : "Von deiner Lehrkraft"}${card.award?.awardedAt ? ` · ${escapeHtml(new Date(card.award.awardedAt).toLocaleDateString("de-DE"))}` : ""}</strong>
+                                  ${card.award?.note ? `<p>„${escapeHtml(card.award.note)}“</p>` : `<p>Dieses Kärtchen wurde dir persönlich verliehen.</p>`}
+                                </div>
+                              `
+                              : ""
+                          }
+                        </div>
+                      `
+                      : ""
+                  }
+                </article>
             `,
           )
           .join("") || (hasManagedProfile ? `<div class="album-chip is-locked accent-sky"><span>◎</span><strong>Warten auf Sync</strong></div>` : "")}
         </div>
       </section>
-      <div class="card-grid">
-        ${cards.length
-          ? cards
-          .map(
-            (card) => `
-              <article class="reward-card accent-${card.accent} ${card.unlocked ? "is-unlocked" : "is-locked"}">
-                <div class="reward-topline">
-                  <p class="reward-state">${card.statusLabel}</p>
-                  <span class="reward-rarity">${card.rarity}</span>
-                </div>
-                <div class="reward-symbol">${card.symbol}</div>
-                <div class="reward-copy">
-                  <h3>${card.title}</h3>
-                  <p>${card.description}</p>
-                  <p class="reward-progress">${card.progressText}</p>
-                  ${
-                    card.manuallyAwarded
-                      ? `
-                        <div class="reward-award-note">
-                          <span>Direkt verliehen</span>
-                          <strong>${card.award?.awardedBy ? `Von ${escapeHtml(card.award.awardedBy)}` : "Von deiner Lehrkraft"}${card.award?.awardedAt ? ` · ${escapeHtml(new Date(card.award.awardedAt).toLocaleDateString("de-DE"))}` : ""}</strong>
-                          ${card.award?.note ? `<p>„${escapeHtml(card.award.note)}“</p>` : `<p>Dieses Kärtchen wurde dir persönlich verliehen.</p>`}
-                        </div>
-                      `
-                      : ""
-                  }
-                </div>
-              </article>
-            `,
-          )
-          .join("")
-          : emptyState}
-      </div>
+      ${cards.length ? "" : `<div class="album-strip album-strip-empty">${emptyState}</div>`}
     </section>
   `;
 }
@@ -3028,10 +4000,41 @@ function render() {
               </div>`
             : ""
         }
+        ${ambientFlight.length
+          ? ambientFlight.map((flight) => `<div class="ambient-flight ${flight.stick ? "is-sticky" : ""}" aria-hidden="true" style="
+                --ambient-duration:${flight.durationMs}ms;
+                --ambient-note-delay:${flight.noteDelayMs}ms;
+                --ambient-bee-delay:${flight.beeDelayMs}ms;
+                --ambient-start-x:${flight.startX};
+                --ambient-start-y:${flight.startY};
+                --ambient-mid-x:${flight.midX};
+                --ambient-mid-y:${flight.midY};
+                --ambient-stick-x:${flight.stickX};
+                --ambient-stick-y:${flight.stickY};
+                --ambient-end-x:${flight.endX};
+                --ambient-end-y:${flight.endY};
+                --ambient-note-rotate-start:${flight.noteRotateStart};
+                --ambient-note-rotate-mid:${flight.noteRotateMid};
+                --ambient-note-rotate-end:${flight.noteRotateEnd};
+                --ambient-bee-rotate-start:${flight.beeRotateStart};
+                --ambient-bee-rotate-mid:${flight.beeRotateMid};
+                --ambient-bee-rotate-end:${flight.beeRotateEnd};
+                --ambient-repel-x:${flight.repelX};
+                --ambient-repel-y:${flight.repelY};
+                --ambient-loop-radius-x:${flight.loopRadiusX};
+                --ambient-loop-radius-y:${flight.loopRadiusY};
+              ">
+                <span class="ambient-flight-note">🎵</span>
+                <span class="ambient-flight-bee">🐝</span>
+              </div>`).join("")
+          : ""}
         <header class="topbar">
-          <div>
+          <div class="topbar-brand">
+            <img class="topbar-brand-icon" src="./icons/icon-192.png" alt="FleißTakt Icon" />
+            <div>
             <p class="eyebrow">Üben sichtbar machen</p>
             <h1>FleißTakt</h1>
+            </div>
           </div>
           <div class="topbar-actions">
             <button class="ghost-button" type="button" id="open-help">
@@ -3090,12 +4093,41 @@ function render() {
 
           <section class="settings-block">
             <h3>Backup</h3>
-            <p class="settings-copy">Backup speichert die Datei lokal. Für Gerätewechsel kann dieselbe Datei direkt über Teilen an das neue Gerät geschickt werden.</p>
+            <p class="settings-copy">Die Lernenden-App hält Übeverlauf, Lernenden-ID und deine Daten auf diesem Gerät lokal fest. Deshalb ist ein Backup hier wichtig. Backup speichert die Datei lokal. Für Gerätewechsel kann dieselbe Datei direkt über Teilen an das neue Gerät geschickt werden. Zusätzlich kann ein letzter Stand auf dem Server gespeichert werden.</p>
             <div class="settings-actions">
               <button class="secondary-action" type="button" id="move-device-button">Auf neues Gerät umziehen</button>
               <button class="secondary-action" type="button" id="export-backup-button">Backup speichern</button>
+              <button class="secondary-action" type="button" id="save-backup-server-button" ${state.syncUploadToken ? "" : "disabled"}>Server-Backup speichern</button>
+              <button class="secondary-action" type="button" id="restore-backup-server-button" ${state.syncUploadToken ? "" : "disabled"}>Letztes Server-Backup wiederherstellen</button>
               <label class="secondary-action settings-file-label" for="backup-input">Backup importieren</label>
               <input id="backup-input" type="file" accept="application/json,.json" hidden />
+            </div>
+            <p class="settings-copy">${state.syncUploadToken ? `Server-Backup läuft über ${escapeHtml(state.syncSiteLabel || state.syncBaseUrl)} und ergänzt dein lokales Backup.` : "Für Server-Backups bitte zuerst das Lernenden-Profil mit dem Unterrichtsserver verbinden."}</p>
+          </section>
+
+          <section class="settings-block">
+            <h3>Übe-Timer</h3>
+            <p class="settings-copy">ÜbeBiene nutzt Erinnerung mit Mitteilung, Vibration und optional einen kurzen Ton. Das ist eine Erinnerung, kein nativer Alarm.</p>
+            <p class="settings-status" data-state="${getTimerNotificationPermission() === "denied" ? "error" : "idle"}">${escapeHtml(getTimerNotificationHint())}</p>
+            <div class="timer-settings-list">
+              <label class="settings-toggle" for="timer-vibration-enabled">
+                <input id="timer-vibration-enabled" type="checkbox" ${state.timerVibrationEnabled ? "checked" : ""} />
+                <div>
+                  <strong>Vibration nutzen</strong>
+                  <span>Beim Timer-Ende kurz vibrieren, wenn das Gerät das unterstützt.</span>
+                </div>
+              </label>
+              <label class="settings-toggle" for="timer-tone-enabled">
+                <input id="timer-tone-enabled" type="checkbox" ${state.timerToneEnabled ? "checked" : ""} />
+                <div>
+                  <strong>Kurzen Ton nutzen</strong>
+                  <span>Wird beim Start des Timers vorbereitet und beim Ende abgespielt, wenn der Browser das zulässt.</span>
+                </div>
+              </label>
+            </div>
+            <div class="settings-actions">
+              ${shouldOfferTimerNotificationPermission() ? `<button class="secondary-action" type="button" id="settings-enable-timer-notifications">Erinnerungen erlauben</button>` : ""}
+              <button class="secondary-action" type="button" id="start-practice-timer-test">Testmodus: 10 Sekunden</button>
             </div>
           </section>
 
@@ -3561,6 +4593,30 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-timer-minutes]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (state.timerSession.status !== "idle") {
+        return;
+      }
+      const nextMinutes = Number(button.dataset.timerMinutes);
+      if (!getTimerPresetOptions().includes(nextMinutes)) {
+        return;
+      }
+      state.timerMinutes = nextMinutes;
+      persistState();
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-student-card-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextId = `${button.dataset.studentCardId || ""}`;
+      state.selectedStudentCardId = state.selectedStudentCardId === nextId ? "" : nextId;
+      persistState();
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-feedback-question][data-feedback-value]").forEach((button) => {
     button.addEventListener("click", () => {
       const questionId = Number(button.dataset.feedbackQuestion);
@@ -3900,6 +4956,65 @@ function bindEvents() {
     });
   }
 
+  const saveBackupServerButton = document.querySelector("#save-backup-server-button");
+  if (saveBackupServerButton) {
+    saveBackupServerButton.addEventListener("click", async () => {
+      try {
+        const result = await saveBackupToServer();
+        state.celebrationText = result?.status === "duplicate_ignored"
+          ? "Server-Backup war bereits aktuell."
+          : "Server-Backup gespeichert.";
+      } catch (error) {
+        if (error?.message === "fehlendes-upload-token") {
+          state.celebrationText = "Für Server-Backups bitte zuerst mit dem Unterrichtsserver verbinden.";
+        } else {
+          state.celebrationText = "Server-Backup konnte nicht gespeichert werden.";
+        }
+      }
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2200);
+    });
+  }
+
+  const restoreBackupServerButton = document.querySelector("#restore-backup-server-button");
+  if (restoreBackupServerButton) {
+    restoreBackupServerButton.addEventListener("click", async () => {
+      if (
+        hasMeaningfulLocalBackupData()
+        && !window.confirm("Der lokale Stand auf diesem Gerät wird durch das letzte Server-Backup ersetzt. Wirklich wiederherstellen?")
+      ) {
+        return;
+      }
+
+      try {
+        await restoreLatestBackupFromServer();
+        state.celebrationText = "Letztes Server-Backup wiederhergestellt.";
+      } catch (error) {
+        if (error?.message === "kein-server-backup") {
+          state.celebrationText = "Noch kein Server-Backup vorhanden.";
+        } else if (error?.message === "ungueltige-pruefsumme") {
+          state.celebrationText = "Server-Backup ungültig oder verändert. Wiederherstellung verweigert.";
+        } else if (error?.message === "ungueltiges-backup") {
+          state.celebrationText = "Server-Backup ist unvollständig oder nicht lesbar.";
+        } else if (error?.message === "fehlendes-upload-token") {
+          state.celebrationText = "Für Server-Backups bitte zuerst mit dem Unterrichtsserver verbinden.";
+        } else {
+          state.celebrationText = "Server-Backup konnte nicht wiederhergestellt werden.";
+        }
+      }
+      state.celebrate = true;
+      render();
+      window.setTimeout(() => {
+        state.celebrate = false;
+        render();
+      }, 2400);
+    });
+  }
+
   const backupInput = document.querySelector("#backup-input");
   if (backupInput) {
     backupInput.addEventListener("change", async (event) => {
@@ -4074,6 +5189,119 @@ function bindEvents() {
       if (valueEl) {
         valueEl.textContent = `${nextGoal} Minuten`;
       }
+    });
+  }
+
+  const startPracticeTimerButton = document.querySelector("#start-practice-timer");
+  if (startPracticeTimerButton) {
+    startPracticeTimerButton.addEventListener("click", () => {
+      startTimerSession(state.timerMinutes);
+      render();
+    });
+  }
+
+  const startPracticeTimerTestButton = document.querySelector("#start-practice-timer-test");
+  if (startPracticeTimerTestButton) {
+    startPracticeTimerTestButton.addEventListener("click", () => {
+      state.activeScreen = "today";
+      state.settingsOpen = false;
+      state.settingsFocusId = "";
+      document.querySelector("#settings-dialog")?.close();
+      applyModalScrollLock();
+      startTimerSession(state.timerMinutes, { durationMs: TIMER_TEST_DURATION_MS });
+      state.celebrationText = "Testmodus gestartet. Der Timer läuft jetzt 10 Sekunden.";
+      state.celebrate = true;
+      render();
+    });
+  }
+
+  const timerVibrationEnabledInput = document.querySelector("#timer-vibration-enabled");
+  if (timerVibrationEnabledInput) {
+    timerVibrationEnabledInput.addEventListener("change", (event) => {
+      state.timerVibrationEnabled = event.target.checked;
+      persistState();
+      render();
+    });
+  }
+
+  const timerToneEnabledInput = document.querySelector("#timer-tone-enabled");
+  if (timerToneEnabledInput) {
+    timerToneEnabledInput.addEventListener("change", (event) => {
+      state.timerToneEnabled = event.target.checked;
+      persistState();
+      render();
+    });
+  }
+
+  const enableTimerNotificationsButton = document.querySelector("#enable-timer-notifications");
+  if (enableTimerNotificationsButton) {
+    enableTimerNotificationsButton.addEventListener("click", async () => {
+      await requestTimerNotificationPermission();
+      render();
+    });
+  }
+
+  const settingsEnableTimerNotificationsButton = document.querySelector("#settings-enable-timer-notifications");
+  if (settingsEnableTimerNotificationsButton) {
+    settingsEnableTimerNotificationsButton.addEventListener("click", async () => {
+      await requestTimerNotificationPermission();
+      render();
+    });
+  }
+
+  const pausePracticeTimerButton = document.querySelector("#pause-practice-timer");
+  if (pausePracticeTimerButton) {
+    pausePracticeTimerButton.addEventListener("click", () => {
+      clearTimerCompletionToast();
+      pauseTimerSession();
+      render();
+    });
+  }
+
+  const resumePracticeTimerButton = document.querySelector("#resume-practice-timer");
+  if (resumePracticeTimerButton) {
+    resumePracticeTimerButton.addEventListener("click", () => {
+      clearTimerCompletionToast();
+      resumeTimerSession();
+      render();
+    });
+  }
+
+  const stopPracticeTimerButton = document.querySelector("#stop-practice-timer");
+  if (stopPracticeTimerButton) {
+    stopPracticeTimerButton.addEventListener("click", () => {
+      clearTimerCompletionToast();
+      stopTimerSession();
+      render();
+    });
+  }
+
+  const closePracticeTimerButton = document.querySelector("#close-practice-timer");
+  if (closePracticeTimerButton) {
+    closePracticeTimerButton.addEventListener("click", () => {
+      clearTimerCompletionToast();
+      clearTimerSession();
+      render();
+    });
+  }
+
+  const extendPracticeTimerButton = document.querySelector("#extend-practice-timer");
+  if (extendPracticeTimerButton) {
+    extendPracticeTimerButton.addEventListener("click", () => {
+      clearTimerCompletionToast();
+      extendTimerSession();
+      render();
+    });
+  }
+
+  const logPracticeTimerButton = document.querySelector("#log-practice-timer");
+  if (logPracticeTimerButton) {
+    logPracticeTimerButton.addEventListener("click", () => {
+      state.minutes = Math.max(2, Number(state.timerSession.totalMinutes) || state.timerMinutes);
+      clearTimerCompletionToast();
+      clearTimerSession();
+      state.activeScreen = "log";
+      render();
     });
   }
 

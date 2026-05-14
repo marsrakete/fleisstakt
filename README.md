@@ -1,5 +1,7 @@
 # FleißTakt
 
+![FleißTakt Icon](./icons/icon-512.png)
+
 FleißTakt ist eine einfache Übe-Begleitung für Musiklernende. Die App hilft dabei, tägliches Üben sichtbar zu machen und mit kleinen Erfolgsmomenten zu verbinden. Dazu kommen eine eigene Lehrkräfte-App und ein WordPress-Plugin als gemeinsame Zentrale.
 
 ## Projektinfos
@@ -278,6 +280,7 @@ Danach genügt im Alltag der normale Server-Sync.
 Lernende:
 
 - tragen Übezeit, Schwerpunkt und optional eine Notiz ein
+- können direkt auf dem Heute-Screen einen Übe-Timer starten
 - sehen Fortschritt, Serie und zugewiesene Kärtchen
 - synchronisieren ihre Daten mit dem WordPress-Server
 - können mehrere Unterrichte auf einem Gerät verwalten und umschalten
@@ -287,6 +290,26 @@ Im verbundenen Modus ist der Unterricht führend. Das bedeutet:
 - Instrument und Profilkontext kommen vom Server
 - nur zugewiesene Ziele werden angezeigt
 - die Synchronisation läuft profilbezogen
+
+## Übe-Timer
+
+Die Lernenden-App enthält einen einfachen Übe-Timer direkt auf dem `Heute`-Screen.
+
+Er ist bewusst nicht als technische Stoppuhr gedacht, sondern als ruhige Hilfe für einen klaren Übe-Block.
+
+Im Alltag bedeutet das:
+
+- Lernende wählen eine vorbereitete Dauer
+- als Faustregel hilft `Alter mal 2 Minuten`
+- der Timer kann pausiert, beendet oder um 2 Minuten verlängert werden
+- nach dem Ende kann der erreichte Übe-Block direkt eingetragen werden
+
+Zur Erinnerung gilt:
+
+- die App nutzt `Mitteilung` statt `Alarm`
+- auf unterstützten Geräten kann der Timer zusätzlich vibrieren
+- ein kurzer Ton ist optional und nur dort sinnvoll, wo der Browser ihn zulässt
+- auf iPhone oder iPad ist für Sperrschirm-Erinnerungen die Nutzung als Home-Bildschirm-App wichtig
 
 ## Was die Lehrkräfte-App im Alltag tut
 
@@ -310,6 +333,12 @@ Die Wochenansicht bündelt dabei für die laufende Woche:
 
 Die Lehrkräfte-App ist bewusst als eigene PWA getrennt von der Lernenden-App gedacht.
 
+Wichtig für die Architektur:
+
+- Die Lehrkräfte-App arbeitet im Alltag primär gegen den WordPress-Server.
+- Der Server ist die führende Datenquelle für Lehrkräfte, Klassen, Unterrichte und Kärtchen.
+- Ein lokales Backup in der Lehrkräfte-App ist deshalb nur eine zusätzliche Notfallreserve, nicht der normale Arbeitsweg.
+
 ## Berichtswesen
 
 FleißTakt bietet Berichte für Woche, Monat und Gesamtzeitraum. Diese Berichte können in der App angesehen, geteilt, kopiert oder heruntergeladen werden.
@@ -318,6 +347,38 @@ Im Alltag gilt:
 
 - Für die tägliche Zusammenarbeit ist der Server-Sync der Hauptweg.
 - Die Lehrkräfte-App bekommt ihre Sicht primär über die WordPress-Zentrale.
+
+## Backups und Gerätewechsel
+
+FleißTakt nutzt zwei Sicherungswege für Lernende:
+
+- `lokales Backup` als Datei auf dem Gerät
+- `Server-Backup` als letzter vollständiger Stand auf dem WordPress-Server
+
+Für die Lernenden-App gilt:
+
+- `Backup speichern` legt die Datei lokal ab
+- `Auf neues Gerät umziehen` nutzt die Teilen-Funktion mit derselben Backup-Datei
+- `Backup importieren` stellt den lokalen Stand wieder her
+- `Server-Backup speichern` legt den letzten Stand zusätzlich auf dem Server ab
+- `Letztes Server-Backup wiederherstellen` holt diesen Stand auf ein Gerät zurück
+
+Wichtig dabei:
+
+- Die Lernenden-App ist im Alltag deutlich gerätenäher als die Lehrkräfte-App. Übeverlauf, Lernenden-ID und deine Daten auf diesem Gerät leben zuerst lokal in der App.
+- Die Lernenden-ID bleibt über Backup und Wiederherstellung erhalten.
+- Server-Backup und lokales Backup dürfen parallel bestehen.
+- Vor einem Gerätewechsel ist ein Backup weiterhin sinnvoll, auch wenn ein Server-Backup genutzt wird.
+
+Für die Lehrkräfte-App gilt:
+
+- Der normale Weg ist der Server-Sync mit dem WordPress-Plugin.
+- Ein Lehrkräfte-Backup ist nicht die fachliche Hauptquelle, sondern nur eine Reserve für Sonderfälle.
+
+Kurz gesagt:
+
+- Die Lernenden-App braucht Backup wirklich als Alltagsschutz.
+- Die Lehrkräfte-App nutzt den Server als Hauptquelle und braucht Backup nur als zusätzliche Absicherung.
 
 ## Ziel im Unterricht
 

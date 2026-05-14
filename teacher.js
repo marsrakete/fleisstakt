@@ -204,6 +204,14 @@ let teacherUpdateInProgress = false;
 let teacherReloadInProgress = false;
 let teacherControllerReloadHandled = false;
 let teacherStatusLineTimeout = null;
+let teacherAmbientFlight = [];
+let teacherAmbientFlightTimeout = 0;
+let teacherAmbientFlightClearTimeout = 0;
+let teacherAmbientFlightBootstrapped = false;
+let teacherAmbientFlightInteractionBound = false;
+const TEACHER_AMBIENT_FLIGHT_FIRST_DELAY_RANGE = [50000, 90000];
+const TEACHER_AMBIENT_FLIGHT_DELAY_RANGE = [155000, 265000];
+const TEACHER_AMBIENT_FLIGHT_DURATION_RANGE = [540, 2000];
 let lastRenderedTeacherStatusLine = null;
 let teacherAutoSyncInProgress = false;
 let teacherAutoSyncPending = {
@@ -217,6 +225,7 @@ applyTeacherModalScrollLock();
 applyTeacherReloadStatusFromUrl();
 renderTeacherApp();
 registerTeacherServiceWorker();
+bootstrapTeacherAmbientFlight();
 
 function createId(prefix = "id") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -331,6 +340,231 @@ function applyTeacherModalScrollLock() {
   document.documentElement.style.overflow = isLocked ? "hidden" : "";
   document.body.style.overflow = isLocked ? "hidden" : "";
   document.body.classList.toggle("is-modal-open", isLocked);
+}
+
+function teacherPrefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+}
+
+function teacherRandomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function getTeacherAmbientFlightTargets(container) {
+  return [...container.querySelectorAll("button, input, select, textarea, .teacher-button, .workspace-button, .student-row, .class-chip, .card-library-row")]
+    .filter((element) => {
+      if (!(element instanceof HTMLElement)) {
+        return false;
+      }
+
+      if (element.disabled || element.closest("dialog[open]")) {
+        return false;
+      }
+
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) < 0.2) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 30 && rect.height >= 20;
+    });
+}
+
+function createTeacherAmbientFlight() {
+  const container = document.querySelector(".teacher-shell");
+  if (!(container instanceof HTMLElement)) {
+    return null;
+  }
+
+  const rect = container.getBoundingClientRect();
+  const margin = 48;
+  const direction = ["left-right", "right-left", "top-bottom", "bottom-top"][Math.floor(Math.random() * 4)];
+  const isHorizontal = direction === "left-right" || direction === "right-left";
+  const start = { x: 0, y: 0 };
+  const end = { x: 0, y: 0 };
+
+  if (direction === "left-right") {
+    start.x = -margin;
+    start.y = teacherRandomBetween(rect.height * 0.1, rect.height * 0.88);
+    end.x = rect.width + margin;
+    end.y = teacherRandomBetween(rect.height * 0.08, rect.height * 0.9);
+  } else if (direction === "right-left") {
+    start.x = rect.width + margin;
+    start.y = teacherRandomBetween(rect.height * 0.1, rect.height * 0.88);
+    end.x = -margin;
+    end.y = teacherRandomBetween(rect.height * 0.08, rect.height * 0.9);
+  } else if (direction === "top-bottom") {
+    start.x = teacherRandomBetween(rect.width * 0.12, rect.width * 0.88);
+    start.y = -margin;
+    end.x = teacherRandomBetween(rect.width * 0.08, rect.width * 0.92);
+    end.y = rect.height + margin;
+  } else {
+    start.x = teacherRandomBetween(rect.width * 0.12, rect.width * 0.88);
+    start.y = rect.height + margin;
+    end.x = teacherRandomBetween(rect.width * 0.08, rect.width * 0.92);
+    end.y = -margin;
+  }
+
+  const availableTargets = getTeacherAmbientFlightTargets(container);
+  const shouldStick = availableTargets.length > 0 && Math.random() < 0.55;
+  const target = shouldStick ? availableTargets[Math.floor(Math.random() * availableTargets.length)] : null;
+  const targetRect = target?.getBoundingClientRect();
+  const stickX = targetRect
+    ? targetRect.left - rect.left + (targetRect.width / 2)
+    : teacherRandomBetween(rect.width * 0.24, rect.width * 0.76);
+  const stickY = targetRect
+    ? targetRect.top - rect.top + (targetRect.height / 2)
+    : teacherRandomBetween(rect.height * 0.18, rect.height * 0.74);
+  const midX = targetRect ? stickX : (start.x + end.x) / 2 + teacherRandomBetween(-rect.width * 0.08, rect.width * 0.08);
+  const midY = targetRect ? stickY : (start.y + end.y) / 2 + teacherRandomBetween(-rect.height * 0.08, rect.height * 0.08);
+  const repelX = isHorizontal ? (direction === "left-right" ? 38 : -38) : teacherRandomBetween(-18, 18);
+  const repelY = isHorizontal ? teacherRandomBetween(-18, 18) : (direction === "top-bottom" ? 36 : -36);
+
+  return {
+    id: `teacher-ambient-${Date.now()}`,
+    durationMs: Math.round(teacherRandomBetween(TEACHER_AMBIENT_FLIGHT_DURATION_RANGE[0], TEACHER_AMBIENT_FLIGHT_DURATION_RANGE[1])),
+    noteDelayMs: Math.round(teacherRandomBetween(0, 40)),
+    beeDelayMs: Math.round(teacherRandomBetween(30, 90)),
+    startX: `${Math.round(start.x)}px`,
+    startY: `${Math.round(start.y)}px`,
+    midX: `${Math.round(midX)}px`,
+    midY: `${Math.round(midY)}px`,
+    stickX: `${Math.round(stickX)}px`,
+    stickY: `${Math.round(stickY)}px`,
+    endX: `${Math.round(end.x)}px`,
+    endY: `${Math.round(end.y)}px`,
+    noteRotateStart: `${Math.round(teacherRandomBetween(-18, 18))}deg`,
+    noteRotateMid: `${Math.round(teacherRandomBetween(-30, 30))}deg`,
+    noteRotateEnd: `${Math.round(teacherRandomBetween(-20, 20))}deg`,
+    beeRotateStart: `${Math.round(teacherRandomBetween(-12, 12))}deg`,
+    beeRotateMid: `${Math.round(teacherRandomBetween(-26, 26))}deg`,
+    beeRotateEnd: `${Math.round(teacherRandomBetween(-18, 18))}deg`,
+    repelX: `${Math.round(repelX)}px`,
+    repelY: `${Math.round(repelY)}px`,
+    loopRadiusX: `${Math.round(teacherRandomBetween(8, 16))}px`,
+    loopRadiusY: `${Math.round(teacherRandomBetween(8, 16))}px`,
+    stick: Boolean(targetRect),
+  };
+}
+
+function createTeacherAmbientSwarm() {
+  const pairCount = Math.round(teacherRandomBetween(5, 10));
+  const flights = [];
+
+  for (let index = 0; index < pairCount; index += 1) {
+    const flight = createTeacherAmbientFlight();
+    if (!flight) {
+      continue;
+    }
+
+    const stagger = index * Math.round(teacherRandomBetween(45, 120));
+    flights.push({
+      ...flight,
+      id: `${flight.id}-${index}`,
+      durationMs: Math.max(480, flight.durationMs + Math.round(teacherRandomBetween(-180, 220))),
+      noteDelayMs: flight.noteDelayMs + stagger,
+      beeDelayMs: flight.beeDelayMs + stagger + Math.round(teacherRandomBetween(12, 90)),
+    });
+  }
+
+  return flights;
+}
+
+function dismissTeacherAmbientFlight(shouldReschedule = true) {
+  window.clearTimeout(teacherAmbientFlightClearTimeout);
+  teacherAmbientFlight = [];
+  renderTeacherApp();
+  if (shouldReschedule) {
+    scheduleTeacherAmbientFlight();
+  }
+}
+
+function scheduleTeacherAmbientFlight(useFirstDelay = false) {
+  if (teacherPrefersReducedMotion()) {
+    return;
+  }
+
+  window.clearTimeout(teacherAmbientFlightTimeout);
+  const range = useFirstDelay ? TEACHER_AMBIENT_FLIGHT_FIRST_DELAY_RANGE : TEACHER_AMBIENT_FLIGHT_DELAY_RANGE;
+  const delay = Math.round(teacherRandomBetween(range[0], range[1]));
+  teacherAmbientFlightTimeout = window.setTimeout(() => {
+    launchTeacherAmbientFlight();
+  }, delay);
+}
+
+function launchTeacherAmbientFlight(force = false) {
+  if (teacherPrefersReducedMotion()) {
+    return;
+  }
+
+  if (document.hidden && !force) {
+    scheduleTeacherAmbientFlight();
+    return;
+  }
+
+  const nextFlight = createTeacherAmbientSwarm();
+  if (!nextFlight?.length) {
+    scheduleTeacherAmbientFlight();
+    return;
+  }
+
+  window.clearTimeout(teacherAmbientFlightTimeout);
+  window.clearTimeout(teacherAmbientFlightClearTimeout);
+  teacherAmbientFlight = nextFlight;
+  renderTeacherApp();
+  const totalDuration = Math.max(...nextFlight.map((flight) => flight.durationMs + flight.beeDelayMs)) + 720;
+  teacherAmbientFlightClearTimeout = window.setTimeout(() => {
+    dismissTeacherAmbientFlight();
+  }, totalDuration);
+}
+
+function bootstrapTeacherAmbientFlight() {
+  if (teacherAmbientFlightBootstrapped || teacherPrefersReducedMotion()) {
+    return;
+  }
+
+  teacherAmbientFlightBootstrapped = true;
+  bindTeacherAmbientFlightInteraction();
+  scheduleTeacherAmbientFlight(true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      return;
+    }
+
+    if (!teacherAmbientFlight.length && !teacherAmbientFlightTimeout) {
+      scheduleTeacherAmbientFlight();
+    }
+  });
+}
+
+function bindTeacherAmbientFlightInteraction() {
+  if (teacherAmbientFlightInteractionBound) {
+    return;
+  }
+
+  teacherAmbientFlightInteractionBound = true;
+
+  const handleInteraction = (event) => {
+    if (event.type === "keydown") {
+      const target = event.target;
+      const isTypingTarget = target instanceof HTMLElement
+        && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (isTypingTarget) {
+        return;
+      }
+    }
+
+    window.clearTimeout(teacherAmbientFlightTimeout);
+    if (teacherAmbientFlight.length) {
+      dismissTeacherAmbientFlight(true);
+      return;
+    }
+    scheduleTeacherAmbientFlight();
+  };
+
+  document.addEventListener("pointerdown", handleInteraction, { passive: true });
+  document.addEventListener("keydown", handleInteraction);
 }
 
 function isAnyTeacherModalOpen() {
@@ -2430,16 +2664,6 @@ function recentWeekReportsForStudent(student, weekStart, weekEnd) {
 function renderWorkspaceRail() {
   return `
     <aside class="teacher-rail">
-      <div class="brand-block">
-        <div class="brand-mark">
-          <img src="./icons/icon-192.svg" alt="FleißTakt Logo" />
-        </div>
-        <div class="brand-copy">
-          <strong>FleißTakt</strong>
-          <span>Lehrkräfte Studio</span>
-        </div>
-      </div>
-
       <nav class="workspace-nav" aria-label="Workspaces">
         ${teacherWorkspaces
           .map(
@@ -3791,10 +4015,39 @@ function renderTeacherApp() {
 
   teacherRoot.innerHTML = `
     <div class="teacher-shell">
+      ${teacherAmbientFlight.length
+        ? teacherAmbientFlight.map((flight) => `<div class="ambient-flight ${flight.stick ? "is-sticky" : ""}" aria-hidden="true" style="
+              --ambient-duration:${flight.durationMs}ms;
+              --ambient-note-delay:${flight.noteDelayMs}ms;
+              --ambient-bee-delay:${flight.beeDelayMs}ms;
+              --ambient-start-x:${flight.startX};
+              --ambient-start-y:${flight.startY};
+              --ambient-mid-x:${flight.midX};
+              --ambient-mid-y:${flight.midY};
+              --ambient-stick-x:${flight.stickX};
+              --ambient-stick-y:${flight.stickY};
+              --ambient-end-x:${flight.endX};
+              --ambient-end-y:${flight.endY};
+              --ambient-note-rotate-start:${flight.noteRotateStart};
+              --ambient-note-rotate-mid:${flight.noteRotateMid};
+              --ambient-note-rotate-end:${flight.noteRotateEnd};
+              --ambient-bee-rotate-start:${flight.beeRotateStart};
+              --ambient-bee-rotate-mid:${flight.beeRotateMid};
+              --ambient-bee-rotate-end:${flight.beeRotateEnd};
+              --ambient-repel-x:${flight.repelX};
+              --ambient-repel-y:${flight.repelY};
+              --ambient-loop-radius-x:${flight.loopRadiusX};
+              --ambient-loop-radius-y:${flight.loopRadiusY};
+            ">
+              <span class="ambient-flight-note">🎵</span>
+              <span class="ambient-flight-bee">🐝</span>
+            </div>`).join("")
+        : ""}
       <header class="teacher-topbar">
         <div>
           <p class="teacher-eyebrow">Lehrkräfte-Version</p>
           <div class="teacher-title-row">
+            <img class="teacher-title-icon" src="./icons/icon-192.png" alt="FleißTakt Icon" />
             <h1>FleißTakt Lehrkräfte Studio</h1>
             ${renderTeacherIdentityLine()}
           </div>

@@ -1,8 +1,10 @@
 # Bug-Liste
 
-Stand: 13.05.2026
+Stand: 14.05.2026
 
-## Lehrkräfte-App
+Die Liste ist auf den aktuellen Projektstand bereinigt. Bereits umgesetzte Punkte stehen unten als erledigt, damit die offenen Baustellen klarer sichtbar bleiben.
+
+## Offen
 
 ### 1. Neue Klasse erscheint nach dem Anlegen nicht in der Lehrkräfte-App
 
@@ -40,29 +42,19 @@ Stand: 13.05.2026
   - Überschreibt die App serverseitige Kategorien lokal wieder mit Standardwerten?
   - Gehören Kategorien global zum Server, zu einer Lehrkraft oder zu einem Unterricht?
 
-## Lernenden-App
+## Erledigt
 
 ### 3. QR-Code-Verbindung: keine Kamera und kein Laden eines QR-Bildes möglich
 
-- Status: Offen
+- Status: Erledigt
 - Bereich: Kopplung / QR-Code
-- Beobachtung:
-  In der Lernenden-App ist weder ein Kamerazugriff für das Scannen eines QR-Codes möglich noch funktioniert das Laden eines QR-Bildes aus der Galerie oder aus Dateien.
-- Erwartung:
-  Die Lernenden-App sollte eine QR-Verbindung entweder per Kamera oder per Auswahl eines QR-Bildes ermöglichen.
-- Reproduktion:
-  1. Lernenden-App öffnen.
-  2. `Mit Lehrkraft verbinden` wählen.
-  3. QR-Code-Scan starten.
-  4. Prüfen, ob Kamera geöffnet wird.
-  5. Alternativ prüfen, ob ein QR-Bild ausgewählt und verarbeitet werden kann.
-- Offene Fragen:
-  - Fehlt die Berechtigung für den Kamerazugriff?
-  - Greift der QR-Scan in installierter PWA anders als im Browser?
-  - Ist der Dateiupload zwar sichtbar, aber nicht korrekt an die QR-Auswertung angebunden?
+- Ergebnis:
+  Die Lernenden-App unterstützt jetzt QR-Erkennung sowohl über Kamera als auch über das Laden eines QR-Bildes. Dafür wird, falls nötig, `jsQR` als Fallback genutzt.
+- Hinweis:
+  Der praktische Gerätetest auf iPhone, Android und Desktop bleibt trotzdem sinnvoll, weil Kamera- und Browserverhalten je nach Plattform unterschiedlich sein können.
 
 ## Nächste Prüfung
 
 1. Klassen-Anlage mit offenem Netzwerk-Log in der Lehrkräfte-App testen.
 2. Kategorien ändern, synchronisieren und den zurückgeladenen Serverstand direkt prüfen.
-3. QR-Verbindung in der Lernenden-App getrennt auf iPhone, Android und Desktop-Browser testen.
+3. QR-Verbindung in der Lernenden-App auf iPhone, Android und Desktop-Browser noch einmal als echter Gerätetest gegenprüfen.

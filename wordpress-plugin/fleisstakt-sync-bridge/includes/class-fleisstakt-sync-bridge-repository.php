@@ -27,6 +27,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
   private string $cards_table;
   private string $card_awards_table;
   private string $reports_table;
+  private string $student_backups_table;
   private string $feedback_rounds_table;
   private string $feedback_questions_table;
   private string $feedback_ballots_table;
@@ -45,6 +46,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
     $this->cards_table = $prefix . 'cards';
     $this->card_awards_table = $prefix . 'card_awards';
     $this->reports_table = $prefix . 'reports';
+    $this->student_backups_table = $prefix . 'student_backups';
     $this->feedback_rounds_table = $prefix . 'feedback_rounds';
     $this->feedback_questions_table = $prefix . 'feedback_round_questions';
     $this->feedback_ballots_table = $prefix . 'feedback_ballots';
@@ -203,6 +205,27 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       KEY exported_at (exported_at)
     ) {$charset};";
 
+    $sql[] = "CREATE TABLE {$this->student_backups_table} (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      backup_uuid VARCHAR(64) NOT NULL,
+      student_profile_id BIGINT UNSIGNED NOT NULL,
+      student_uuid VARCHAR(64) NOT NULL,
+      app_student_id VARCHAR(64) NOT NULL,
+      checksum VARCHAR(64) NOT NULL,
+      payload_json LONGTEXT NOT NULL,
+      payload_version VARCHAR(32) NOT NULL DEFAULT '',
+      app_version VARCHAR(32) NOT NULL DEFAULT '',
+      device_label VARCHAR(120) NOT NULL DEFAULT '',
+      saved_at DATETIME NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      PRIMARY KEY (id),
+      UNIQUE KEY backup_uuid (backup_uuid),
+      UNIQUE KEY profile_checksum (student_profile_id, checksum),
+      KEY student_profile_id (student_profile_id),
+      KEY app_student_id (app_student_id),
+      KEY saved_at (saved_at)
+    ) {$charset};";
+
     $sql[] = "CREATE TABLE {$this->feedback_rounds_table} (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       round_uuid VARCHAR(64) NOT NULL,
@@ -340,6 +363,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
         'cards' => $this->wpdb->get_results("SELECT * FROM {$this->cards_table} ORDER BY id ASC", ARRAY_A),
         'cardAwards' => $this->wpdb->get_results("SELECT * FROM {$this->card_awards_table} ORDER BY id ASC", ARRAY_A),
         'reports' => $this->wpdb->get_results("SELECT * FROM {$this->reports_table} ORDER BY id ASC", ARRAY_A),
+        'studentBackups' => $this->wpdb->get_results("SELECT * FROM {$this->student_backups_table} ORDER BY id ASC", ARRAY_A),
         'feedbackRounds' => $this->wpdb->get_results("SELECT * FROM {$this->feedback_rounds_table} ORDER BY id ASC", ARRAY_A),
         'feedbackQuestions' => $this->wpdb->get_results("SELECT * FROM {$this->feedback_questions_table} ORDER BY id ASC", ARRAY_A),
         'feedbackBallots' => $this->wpdb->get_results("SELECT * FROM {$this->feedback_ballots_table} ORDER BY id ASC", ARRAY_A),
@@ -377,6 +401,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       || !is_array($data['cards'] ?? null)
       || !is_array($data['cardAwards'] ?? null)
       || !is_array($data['reports'] ?? null)
+      || !is_array($data['studentBackups'] ?? null)
     ) {
       throw new InvalidArgumentException('ungueltige-backup-daten');
     }
@@ -387,6 +412,7 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       $this->wpdb->query("DELETE FROM {$this->feedback_questions_table}");
       $this->wpdb->query("DELETE FROM {$this->feedback_rounds_table}");
       $this->wpdb->query("DELETE FROM {$this->reports_table}");
+      $this->wpdb->query("DELETE FROM {$this->student_backups_table}");
       $this->wpdb->query("DELETE FROM {$this->card_awards_table}");
       $this->wpdb->query("DELETE FROM {$this->cards_table}");
       $this->wpdb->query("DELETE FROM {$this->assignments_table}");
@@ -443,6 +469,12 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
       foreach ($data['reports'] as $row) {
         $this->insert_backup_row($this->reports_table, $row, [
           '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s',
+        ]);
+      }
+
+      foreach ($data['studentBackups'] as $row) {
+        $this->insert_backup_row($this->student_backups_table, $row, [
+          '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
         ]);
       }
 
@@ -1567,6 +1599,100 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
     ];
   }
 
+  public function store_student_backup(array $payload, array $profile): array {
+    $normalized = $this->normalize_student_backup_payload($payload);
+    $this->validate_student_backup_payload($payload, $profile);
+
+    $checksum = sanitize_text_field((string) $payload['checksum']);
+    $saved_at = current_time('mysql', true);
+    $backup_uuid = !empty($payload['backupUuid'])
+      ? sanitize_text_field((string) $payload['backupUuid'])
+      : $this->generate_uuid('backup');
+
+    $existing = $this->wpdb->get_row(
+      $this->wpdb->prepare(
+        "SELECT id, backup_uuid, saved_at
+         FROM {$this->student_backups_table}
+         WHERE student_profile_id = %d AND checksum = %s
+         LIMIT 1",
+        (int) $profile['id'],
+        $checksum
+      ),
+      ARRAY_A
+    );
+
+    if ($existing) {
+      return [
+        'duplicate' => true,
+        'backup_uuid' => $existing['backup_uuid'],
+        'saved_at' => !empty($existing['saved_at']) ? gmdate('c', strtotime((string) $existing['saved_at'])) : gmdate('c'),
+      ];
+    }
+
+    $student = $this->get_student((int) ($profile['student_id'] ?? 0));
+    $device_label = sanitize_text_field((string) ($payload['deviceLabel'] ?? ''));
+    $app_version = sanitize_text_field((string) ($normalized['version'] ?? ''));
+    $payload_for_storage = [
+      ...$normalized,
+      'checksum' => $checksum,
+    ];
+
+    $this->assert_db_write_success(
+      $this->wpdb->insert(
+        $this->student_backups_table,
+        [
+          'backup_uuid' => $backup_uuid,
+          'student_profile_id' => (int) $profile['id'],
+          'student_uuid' => $student['student_uuid'] ?? '',
+          'app_student_id' => $profile['app_student_id'],
+          'checksum' => $checksum,
+          'payload_json' => wp_json_encode($payload_for_storage, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+          'payload_version' => sanitize_text_field((string) ($normalized['version'] ?? '')),
+          'app_version' => $app_version,
+          'device_label' => $device_label,
+          'saved_at' => $saved_at,
+          'status' => 'active',
+        ],
+        ['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+      ),
+      'Server-Backup konnte nicht gespeichert werden.'
+    );
+
+    return [
+      'duplicate' => false,
+      'backup_uuid' => $backup_uuid,
+      'saved_at' => gmdate('c', strtotime($saved_at)),
+    ];
+  }
+
+  public function get_latest_student_backup(array $profile): ?array {
+    $row = $this->wpdb->get_row(
+      $this->wpdb->prepare(
+        "SELECT backup_uuid, payload_json, checksum, saved_at, app_version, device_label
+         FROM {$this->student_backups_table}
+         WHERE student_profile_id = %d
+           AND status = 'active'
+         ORDER BY saved_at DESC, id DESC
+         LIMIT 1",
+        (int) $profile['id']
+      ),
+      ARRAY_A
+    );
+
+    if (!$row) {
+      return null;
+    }
+
+    return [
+      'backupUuid' => $row['backup_uuid'],
+      'checksum' => $row['checksum'],
+      'savedAt' => !empty($row['saved_at']) ? gmdate('c', strtotime((string) $row['saved_at'])) : '',
+      'appVersion' => $row['app_version'],
+      'deviceLabel' => $row['device_label'],
+      'payload' => json_decode((string) $row['payload_json'], true),
+    ];
+  }
+
   public function get_feedback_ballot_by_token(string $ballot_token): ?array {
     $token = sanitize_text_field($ballot_token);
     if ($token === '') {
@@ -2664,6 +2790,40 @@ public const DEFAULT_PRACTICE_CATEGORIES = ['Hände getrennt üben', 'Schneckent
     }
 
     return 'ft-' . str_pad(dechex($hash), 8, '0', STR_PAD_LEFT);
+  }
+
+  private function normalize_student_backup_payload(array $payload): array {
+    return [
+      'exportedAt' => (string) ($payload['exportedAt'] ?? gmdate('c')),
+      'app' => (string) ($payload['app'] ?? 'FleißTakt'),
+      'version' => (string) ($payload['version'] ?? ''),
+      'data' => is_array($payload['data'] ?? null) ? $payload['data'] : [],
+    ];
+  }
+
+  private function validate_student_backup_payload(array $payload, array $profile): void {
+    $data = $payload['data'] ?? null;
+    if (!is_array($data) || !is_array($data['entries'] ?? null)) {
+      throw new InvalidArgumentException('ungueltiges-backup');
+    }
+
+    $checksum = sanitize_text_field((string) ($payload['checksum'] ?? ''));
+    $expected_payload = [
+      'exportedAt' => (string) ($payload['exportedAt'] ?? ''),
+      'app' => (string) ($payload['app'] ?? ''),
+      'version' => (string) ($payload['version'] ?? ''),
+      'data' => $data,
+    ];
+
+    $expected_checksum = $this->create_checksum($expected_payload);
+    if ($checksum === '' || !hash_equals($expected_checksum, $checksum)) {
+      throw new InvalidArgumentException('ungueltige-pruefsumme');
+    }
+
+    $app_student_id = sanitize_text_field((string) ($data['studentId'] ?? ''));
+    if ($app_student_id === '' || $app_student_id !== (string) ($profile['app_student_id'] ?? '')) {
+      throw new InvalidArgumentException('profil-passt-nicht');
+    }
   }
 
   private function run_in_transaction(callable $callback): mixed {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "fleisstakt-shell-v108";
+const CACHE_NAME = "fleisstakt-shell-v141";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -11,9 +11,11 @@ const APP_ASSETS = [
   "./teacher.css",
   "./version.js",
   "./manifest.webmanifest",
-  "./icons/favicon.svg",
-  "./icons/icon-192.svg",
-  "./icons/icon-512.svg",
+  "./icons/favicon-16.png",
+  "./icons/favicon-32.png",
+  "./icons/apple-touch-icon.png",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
   "./icons/fleisstakt-share-qr.svg",
 ];
 
@@ -91,6 +93,29 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    const matchingClient = allClients.find((client) => {
+      try {
+        return new URL(client.url).pathname.includes("/fleisstakt/");
+      } catch {
+        return false;
+      }
+    });
+
+    if (matchingClient) {
+      await matchingClient.focus();
+      return;
+    }
+
+    if (clients.openWindow) {
+      await clients.openWindow("./");
+    }
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
